@@ -10,7 +10,7 @@
 <a href="LICENSE"><img src="https://img.shields.io/github/license/proem/codex-review-loop?style=flat-square" alt="MIT License"></a>
 </p>
 
-Watch a GitHub PR for Codex AI review, fix each finding in-loop, and stop at a sensible point (Codex 👍, or a severity floor you judge) instead of chasing nitpicks forever.
+Watch a GitHub PR (pull request — one proposed batch of code changes) for Codex AI review, fix each finding in-loop, and stop at a sensible point — either Codex's 👍, or your own call that nothing important is left — instead of chasing nitpicks, the kind of minor comment nothing breaks without, forever.
 
 <p align="center">
 <img src="docs/images/01-the-loop.png" alt="Chasing an AI review's nitpicks never ends — the notes loop into a closed ring" width="720">
@@ -18,7 +18,7 @@ Watch a GitHub PR for Codex AI review, fix each finding in-loop, and stop at a s
 
 ## What it is
 
-`codex-review-loop` is a [Claude Code](https://claude.com/claude-code) skill (also packaged as a Codex plugin via `.codex-plugin/plugin.json`) that shepherds a pull request through [OpenAI Codex's](https://openai.com/index/introducing-codex/) GitHub review bot (`chatgpt-codex-connector[bot]`): it monitors for new review activity, authors a fix for each finding, resolves the thread, and decides — on its own authority, not the bot's — when the PR is done.
+`codex-review-loop` is a [Claude Code](https://claude.com/claude-code) skill (also packaged as a Codex plugin via `.codex-plugin/plugin.json`) that shepherds a pull request through [OpenAI Codex's](https://openai.com/index/introducing-codex/) GitHub review bot (`chatgpt-codex-connector[bot]`): it monitors for new review activity, authors a fix for each finding, marks the thread (one comment discussion on the PR) resolved, and decides — on its own authority, not the bot's — when the PR is done.
 
 ## Why
 
@@ -26,7 +26,7 @@ Codex can always surface one more nitpick, and auto-review-on-push is unreliable
 
 ## Key ideas
 
-- **Self-healing monitor** — a single GraphQL query per poll cycle watches reviews, inline findings, PR-issue comments, the 👍 reaction, and CI together. If the head commit goes CI-green with no Codex reaction, the monitor auto-posts one `@codex review` nudge per unreviewed head — no human has to notice the stall.
+- **Self-healing monitor** — a single GraphQL query per poll cycle watches reviews, inline findings, PR-issue comments, the 👍 reaction, and CI (the builds and tests that run automatically) together. If the head commit — the newest commit on the branch — goes CI-green, meaning every automated check passed, with no Codex reaction, the monitor auto-posts one `@codex review` nudge per unreviewed head — no human has to notice the stall.
 
   <p align="center">
   <img src="docs/images/02-self-healing-monitor.png" alt="CI is green but Codex stays silent, so the monitor pokes it once instead of waiting" width="640">
@@ -40,14 +40,21 @@ Codex can always surface one more nitpick, and auto-review-on-push is unreliable
 
 - **Stopping authority stays with you, not the bot.** Three legal exits, any one of which ends the loop:
   1. Codex's 👍.
-  2. A severity floor you judge is reached (no unresolved P0, no unresolved P1 on the changed path, no regression you introduced) — everything else gets archived as a follow-up issue.
-  3. A round cap, as a backstop against Codex endlessly re-filing the same nitpicks.
+  2. You judge that the **severity floor** — the line below which nothing left is worth another round — is reached: no unresolved P0, no unresolved P1 on the code path your change touched, and no regression (something that worked fine before your change broke it). Everything else gets archived as a follow-up issue: a to-do item filed for later.
+  3. A **round cap** — a hard limit on how many rounds the loop runs — as a backstop against Codex endlessly re-filing the same nitpicks.
 
   <p align="center">
   <img src="docs/images/03-three-exits.png" alt="Stopping authority stays with the human — three doors are the three legal exits" width="640">
   </p>
 
-- **A P0–P3 decision table** drives what gets fixed in-PR versus filed as a follow-up.
+- **A P0–P3 decision table** — Codex tags each comment with a severity, and the table turns that tag into fix-in-PR versus file-as-follow-up.
+
+  | Tag | What it means |
+  | --- | --- |
+  | **P0** | Something that will actually break: a crash, wrong data, a security hole. Fix in this PR. |
+  | **P1** | A real problem, less urgent. Fix it if it sits on the path your change touched; otherwise file it. |
+  | **P2** | A suggested improvement. Archive by default. |
+  | **P3** | Style, naming, nitpick territory. Archive by default. |
 
   <p align="center">
   <img src="docs/images/04-triage.png" alt="Triaging review findings into fix now versus file for later" width="640">
