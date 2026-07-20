@@ -10,6 +10,10 @@
 
 Watch a GitHub PR for Codex AI review, fix each finding in-loop, and stop at a sensible point (Codex 👍, or a severity floor you judge) instead of chasing nitpicks forever.
 
+<p align="center">
+<img src="docs/images/01-the-loop.png" alt="Chasing an AI review's nitpicks never ends — the notes loop into a closed ring" width="720">
+</p>
+
 ## What it is
 
 `codex-review-loop` is a [Claude Code](https://claude.com/claude-code) skill (also packaged as a Codex plugin via `.codex-plugin/plugin.json`) that shepherds a pull request through [OpenAI Codex's](https://openai.com/index/introducing-codex/) GitHub review bot (`chatgpt-codex-connector[bot]`): it monitors for new review activity, authors a fix for each finding, resolves the thread, and decides — on its own authority, not the bot's — when the PR is done.
@@ -21,12 +25,32 @@ Codex can always surface one more nitpick, and auto-review-on-push is unreliable
 ## Key ideas
 
 - **Self-healing monitor** — a single GraphQL query per poll cycle watches reviews, inline findings, PR-issue comments, the 👍 reaction, and CI together. If the head commit goes CI-green with no Codex reaction, the monitor auto-posts one `@codex review` nudge per unreviewed head — no human has to notice the stall.
+
+  <p align="center">
+  <img src="docs/images/02-self-healing-monitor.png" alt="CI is green but Codex stays silent, so the monitor pokes it once instead of waiting" width="640">
+  </p>
+
 - **Quota-aware auto-exit** — if Codex replies with an explicit usage/quota-limit message instead of a review, the monitor detects it mechanically, prints `[BLOCKED:QUOTA]`, and exits the watch itself rather than leaving that fact buried in routine polling output.
+
+  <p align="center">
+  <img src="docs/images/05-quota-block.png" alt="Codex reports quota exhausted, so the monitor stops the clock and reports it immediately instead of waiting it out" width="640">
+  </p>
+
 - **Stopping authority stays with you, not the bot.** Three legal exits, any one of which ends the loop:
   1. Codex's 👍.
   2. A severity floor you judge is reached (no unresolved P0, no unresolved P1 on the changed path, no regression you introduced) — everything else gets archived as a follow-up issue.
   3. A round cap, as a backstop against Codex endlessly re-filing the same nitpicks.
+
+  <p align="center">
+  <img src="docs/images/03-three-exits.png" alt="Stopping authority stays with the human — three doors are the three legal exits" width="640">
+  </p>
+
 - **A P0–P3 decision table** drives what gets fixed in-PR versus filed as a follow-up.
+
+  <p align="center">
+  <img src="docs/images/04-triage.png" alt="Triaging review findings into fix now versus file for later" width="640">
+  </p>
+
 - **Merging is opt-in and safety-gated** — the loop never merges on its own; it only does so if explicitly armed with merge intent, and only with CI green and no unresolved P0/P1-on-path.
 
 ## Requirements
