@@ -1,6 +1,6 @@
 ---
 name: codex-review-loop
-description: Watch a GitHub PR for Codex AI review comments, author each fix in-loop, and stop at a sensible point instead of chasing Codex's nitpicks forever (Codex's 👍, or only non-regression nitpicks left → archive as follow-ups and close out). Use when the user says "watch codex's review on this PR", "wait for codex's thumbs-up", "codex review loop", "watch codex on PR", "iterate on codex feedback", "codex pr iterate", "don't let codex review forever", or when they want a PR shepherded through automated review until approved. Also use when the user opens a PR and asks "keep an eye on it and fix what comes up". Do NOT trigger when the repo has no `chatgpt-codex-connector[bot]` installed, when the user wants only human review, or when they ask to disable Codex.
+description: Watch a GitHub PR for Codex AI review comments, author each fix in-loop, and stop at a sensible point instead of chasing Codex's nitpicks forever (Codex's 👍, or only non-regression nitpicks left → archive as follow-ups and close out). Use when the user says "盯着 codex 的 review", "等 codex 大拇指", "codex review loop", "watch codex on PR", "迭代修 codex 反馈", "codex pr iterate", "别让 codex 无限 review", or when they want a PR shepherded through automated review until approved. Also use when the user opens a PR and asks "盯一下，有问题就修" or "keep an eye on it and fix what comes up". Do NOT trigger when the repo has no `chatgpt-codex-connector[bot]` installed, when the user wants only human review, or when they ask to disable Codex.
 ---
 
 # Codex Review Loop
