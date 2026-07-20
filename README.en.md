@@ -4,8 +4,10 @@
 
 > 🔁 Watch Codex's review, fix what needs fixing, stop where it should stop
 
+<!-- Once skills.sh indexes this repo (https://www.skills.sh/proem/codex-review-loop returns 200), swap the static badge for the live install count: <img src="https://skills.sh/b/proem/codex-review-loop?v=2"> -->
 <p align="center">
-<a href="https://skills.sh/proem/codex-review-loop"><img src="https://skills.sh/b/proem/codex-review-loop?v=2" alt="skills.sh"></a>
+<a href="https://skills.sh/proem/codex-review-loop"><img src="https://img.shields.io/badge/skills.sh-npx%20skills%20add-black?style=flat-square" alt="skills.sh install"></a>
+<a href="LICENSE"><img src="https://img.shields.io/github/license/proem/codex-review-loop?style=flat-square" alt="MIT License"></a>
 </p>
 
 Watch a GitHub PR for Codex AI review, fix each finding in-loop, and stop at a sensible point (Codex 👍, or a severity floor you judge) instead of chasing nitpicks forever.

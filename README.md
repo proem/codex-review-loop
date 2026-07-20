@@ -4,8 +4,10 @@
 
 > 🔁 盯住 Codex review，修完该修的，在该停的地方停下
 
+<!-- Once skills.sh indexes this repo (https://www.skills.sh/proem/codex-review-loop returns 200), swap the static badge for the live install count: <img src="https://skills.sh/b/proem/codex-review-loop?v=2"> -->
 <p align="center">
-<a href="https://skills.sh/proem/codex-review-loop"><img src="https://skills.sh/b/proem/codex-review-loop?v=2" alt="skills.sh"></a>
+<a href="https://skills.sh/proem/codex-review-loop"><img src="https://img.shields.io/badge/skills.sh-npx%20skills%20add-black?style=flat-square" alt="skills.sh 安装"></a>
+<a href="LICENSE"><img src="https://img.shields.io/github/license/proem/codex-review-loop?style=flat-square" alt="MIT 许可证"></a>
 </p>
 
 盯住一个 GitHub PR 上的 Codex AI review，边跑边修每一条发现，并在合适的时机停下（Codex 给出 👍，或者你判断已经到了严重度下限），而不是无止境地追着 nitpick 跑。
