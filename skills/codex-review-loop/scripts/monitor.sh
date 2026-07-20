@@ -36,7 +36,7 @@ while true; do
     # NOT resolve on the monitor's own timescale — quota resets are hours/a day
     # away, not another 60s poll — so waiting it out (or leaving a human to notice
     # a generic "comment ..." line among routine output) is the wrong shape. A real
-    # run sat on exactly this for 3 hours before a human asked "好了吗？"
+    # run sat on exactly this for 3 hours before a human asked "is it done yet?"
     # (a real production PR). Detect it mechanically and EXIT the script — ending
     # the Monitor watch itself is a much harder signal to miss than one more stdout
     # line, and there is nothing more this loop can do until quota resets.
