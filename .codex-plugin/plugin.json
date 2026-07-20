@@ -1,0 +1,10 @@
+{
+  "name": "codex-review-loop",
+  "version": "1.2.0",
+  "description": "Watch a GitHub PR for Codex AI review, fix each finding in-loop, and stop at a sensible point (Codex 👍 or a severity floor you judge) instead of chasing nitpicks forever",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "codex-review-loop",
+    "category": "Developer Tools"
+  }
+}
