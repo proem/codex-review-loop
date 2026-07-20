@@ -1,42 +1,58 @@
-# codex-review-loop
+<h1 align="center">codex-review-loop</h1>
 
-Watch a GitHub PR for Codex AI review, fix each finding in-loop, and stop at a sensible point (Codex 👍, or a severity floor you judge) instead of chasing nitpicks forever.
+中文 | [English](README.en.md)
 
-## What it is
+> 🔁 盯住 Codex review，修完该修的，在该停的地方停下
 
-`codex-review-loop` is a [Claude Code](https://claude.com/claude-code) skill (also packaged as a Codex plugin via `.codex-plugin/plugin.json`) that shepherds a pull request through [OpenAI Codex's](https://openai.com/index/introducing-codex/) GitHub review bot (`chatgpt-codex-connector[bot]`): it monitors for new review activity, authors a fix for each finding, resolves the thread, and decides — on its own authority, not the bot's — when the PR is done.
+<p align="center">
+<a href="https://skills.sh/proem/codex-review-loop"><img src="https://skills.sh/b/proem/codex-review-loop?v=2" alt="skills.sh"></a>
+</p>
 
-## Why
+盯住一个 GitHub PR 上的 Codex AI review，边跑边修每一条发现，并在合适的时机停下（Codex 给出 👍，或者你判断已经到了严重度下限），而不是无止境地追着 nitpick 跑。
 
-Codex can always surface one more nitpick, and auto-review-on-push is unreliable (it routinely leaves a commit with no reaction at all). Left unmanaged, that turns into either an infinite review loop chasing a 👍 that never comes, or a PR silently stalled because nobody noticed the bot went quiet. This skill closes both gaps mechanically.
+## 这是什么
 
-## Key ideas
+`codex-review-loop` 是一个 [Claude Code](https://claude.com/claude-code) skill（同时通过 `.codex-plugin/plugin.json` 打包为 Codex 插件），负责陪一个 pull request 走完 [OpenAI Codex](https://openai.com/index/introducing-codex/) 的 GitHub review bot（`chatgpt-codex-connector[bot]`）全程：监控新的 review 动态、为每条发现写修复、解决对应的 thread，并且自己判断——而不是让 bot 判断——PR 什么时候算完。
 
-- **Self-healing monitor** — a single GraphQL query per poll cycle watches reviews, inline findings, PR-issue comments, the 👍 reaction, and CI together. If the head commit goes CI-green with no Codex reaction, the monitor auto-posts one `@codex review` nudge per unreviewed head — no human has to notice the stall.
-- **Quota-aware auto-exit** — if Codex replies with an explicit usage/quota-limit message instead of a review, the monitor detects it mechanically, prints `[BLOCKED:QUOTA]`, and exits the watch itself rather than leaving that fact buried in routine polling output.
-- **Stopping authority stays with you, not the bot.** Three legal exits, any one of which ends the loop:
-  1. Codex's 👍.
-  2. A severity floor you judge is reached (no unresolved P0, no unresolved P1 on the changed path, no regression you introduced) — everything else gets archived as a follow-up issue.
-  3. A round cap, as a backstop against Codex endlessly re-filing the same nitpicks.
-- **A P0–P3 decision table** drives what gets fixed in-PR versus filed as a follow-up.
-- **Merging is opt-in and safety-gated** — the loop never merges on its own; it only does so if explicitly armed with merge intent, and only with CI green and no unresolved P0/P1-on-path.
+## 为什么
 
-## Requirements
+Codex 总能再挑出一条 nitpick，而且它在 push 之后的自动 review 并不可靠（经常在一个新 commit 上完全没有任何反应）。放任不管的话，要么变成一个永远追着 👍 跑不完的无限 review 循环，要么变成一个因为没人注意到 bot 沉默了而静静卡住的 PR。这个 skill 用机制化的方式把这两个坑都堵上了。
 
-- [`gh`](https://cli.github.com/) (GitHub CLI), authenticated against the target repo.
-- `jq`.
-- A repository with the [Codex GitHub connector](https://developers.openai.com/codex) installed, so `chatgpt-codex-connector[bot]` actually reviews PRs.
+## 核心设计
 
-## Installation
+- **自愈式 monitor** —— 每个轮询周期只发一条 GraphQL 查询，同时盯住 review、行内发现、PR 上的 issue 评论、👍 reaction 和 CI。如果 head commit 已经 CI 变绿但 Codex 还没有任何反应，monitor 会对每个未被 review 的 head 自动发一条 `@codex review` —— 不需要人去发现这个卡点。
+- **配额感知的自动退出** —— 如果 Codex 回复的是一条明确的用量/配额限制消息而不是 review，monitor 会机制化地识别出来，打印 `[BLOCKED:QUOTA]`，然后自己退出监控，而不是把这个事实埋在日常轮询输出里。
+- **停止的决定权在你手里，不在 bot 手里。** 三个合法的退出条件，任意一个满足就可以结束循环：
+  1. Codex 给出 👍 —— 最干净的方式。
+  2. 你判断已经到了严重度下限（没有未解决的 P0、改动路径上没有未解决的 P1、也没有你引入的 regression）—— 剩下的都归档为后续 issue。
+  3. 轮次上限，作为兜底，防止 Codex 无限重复提同样的 nitpick。
+- **P0–P3 决策表**：决定哪些要在这个 PR 里直接修，哪些归档为后续 follow-up。
+- **合并是可选项，且有安全闸门** —— 循环本身从不自动合并；只有在明确带着合并意图启动的情况下才会合并，并且要求 CI 全绿、且没有未解决的 P0 或改动路径上的 P1。
 
-**Claude Code**: clone this repo, then copy `skills/codex-review-loop/` into your skills directory — `~/.claude/skills/` for a per-user install, or `.claude/skills/` inside a specific project.
+## 依赖要求
 
-**Codex**: this repo ships a Codex plugin manifest at [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json), so it can be installed as a Codex plugin.
+- [`gh`](https://cli.github.com/)（GitHub CLI），并已针对目标仓库完成认证。
+- `jq`。
+- 目标仓库已安装 [Codex GitHub 连接器](https://developers.openai.com/codex)，这样 `chatgpt-codex-connector[bot]` 才会真的去 review PR。
 
-## Usage
+## 安装
 
-Once installed, trigger it on an open PR you want Codex to gate — e.g. "watch codex on this PR" or "盯着 codex 的 review". The full protocol, decision rules, monitor script, and fix workflow live in [`skills/codex-review-loop/SKILL.md`](skills/codex-review-loop/SKILL.md).
+推荐用 [`skills`](https://www.npmjs.com/package/skills) CLI 一键安装——一条命令，自动适配 Claude Code、Cursor、Codex 等主流 agent：
 
-## License
+```bash
+npx skills add proem/codex-review-loop
+```
+
+也可以手动安装：clone 本仓库，然后把 `skills/codex-review-loop/` 目录复制到你的 skills 目录下——个人级安装放到 `~/.claude/skills/`，项目级安装放到项目内的 `.claude/skills/`。
+
+**Codex**：本仓库在 `.codex-plugin/plugin.json` 提供了 Codex 插件清单，因此也可以作为 Codex 插件安装。
+
+重启 Claude Code 会话即可生效。
+
+## 使用方法
+
+装好之后，在你想让 Codex 把关的一个开着的 PR 上触发它——比如说“watch codex on this PR”或者“盯着 codex 的 review”。完整的协议、决策规则、monitor 脚本和修复流程都在 [`skills/codex-review-loop/SKILL.md`](skills/codex-review-loop/SKILL.md) 里。
+
+## 许可证
 
 [MIT](LICENSE)
