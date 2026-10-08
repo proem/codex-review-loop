@@ -1,0 +1,17 @@
+{
+  "name": "@proem/codex-review-loop",
+  "version": "1.3.0",
+  "description": "Watch a GitHub PR for Codex AI review, fix each finding in-loop, and stop at a sensible point (Codex 👍 or a severity floor you judge) instead of chasing nitpicks forever",
+  "private": true,
+  "keywords": [
+    "pi-package",
+    "proem",
+    "codex-review-loop",
+    "skills"
+  ],
+  "pi": {
+    "skills": [
+      "./skills"
+    ]
+  }
+}
