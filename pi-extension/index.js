@@ -24,9 +24,12 @@ function run(file, args, options = {}) {
 
 function parseCommand(text) {
   const parts = String(text || "").trim().split(/\s+/).filter(Boolean);
-  const [action = "status", pr = ""] = parts;
+  const [action = "status", ...rest] = parts;
   if (!["start", "stop", "status"].includes(action)) return { action: "invalid", value: action };
-  return { action, pr };
+  const repoFlag = rest.indexOf("--repo");
+  const repo = repoFlag >= 0 ? rest[repoFlag + 1] || "" : "";
+  const positional = repoFlag >= 0 ? rest.filter((_part, index) => index !== repoFlag && index !== repoFlag + 1) : rest;
+  return { action, pr: positional[0] || "", repo };
 }
 
 function statePath(cwd, pr) {
@@ -69,6 +72,15 @@ function syncStatus(ctx, state) {
   const label = `${state.owner}/${state.name}#${state.pr}`;
   const link = hyperlink(label, state.url);
   ctx?.ui?.setStatus?.("codex-review-loop", `Codex monitor: ${state.status} · ${link}`);
+}
+
+async function assertGitRepository(cwd) {
+  try {
+    const { stdout } = await run("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { cwd });
+    return stdout.trim() || cwd;
+  } catch {
+    throw new Error(`Current directory is not a Git repository: ${cwd}. Open Pi in the target repository, or use /codex-review-loop start [PR] --repo C:/path/to/repository.`);
+  }
 }
 
 async function resolvePullRequest(cwd, requested) {
@@ -117,7 +129,7 @@ export default function codexReviewLoopExtension(pi) {
         return;
       }
 
-      const cwd = ctx.cwd || process.cwd();
+      const cwd = parsed.repo || ctx.cwd || process.cwd();
       if (parsed.action === "status") {
         const current = status(ctx);
         if (!current) {
@@ -147,9 +159,10 @@ export default function codexReviewLoopExtension(pi) {
       }
 
       try {
-        const pr = await resolvePullRequest(cwd, parsed.pr);
-        const { owner, name } = await resolveRepository(cwd);
-        const path = statePath(cwd, pr);
+        const repoCwd = await assertGitRepository(cwd);
+        const pr = await resolvePullRequest(repoCwd, parsed.pr);
+        const { owner, name } = await resolveRepository(repoCwd);
+        const path = statePath(repoCwd, pr);
         const previous = readState(path);
         if (previous && processAlive(previous.pid)) {
           active = previous;
@@ -161,7 +174,7 @@ export default function codexReviewLoopExtension(pi) {
         const log = `${path}.log`;
         const logFd = openSync(log, "a");
         const child = spawn("bash", [MONITOR_SCRIPT], {
-          cwd,
+          cwd: repoCwd,
           detached: true,
           env: { ...process.env, PR: pr, OWNER: owner, NAME: name },
           stdio: ["ignore", logFd, logFd],
@@ -169,7 +182,7 @@ export default function codexReviewLoopExtension(pi) {
         child.unref();
 
         const url = `https://github.com/${owner}/${name}/pull/${pr}`;
-        active = { pid: child.pid, pr, owner, name, url, cwd, log, statePath: path, status: "running", reviewer: REVIEWER };
+        active = { pid: child.pid, pr, owner, name, url, cwd: repoCwd, log, statePath: path, status: "running", reviewer: REVIEWER };
         saveState(path, active);
         pi.appendEntry("codex-review-loop", { action: "start", ...active });
         syncStatus(ctx, active);

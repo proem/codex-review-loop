@@ -4,9 +4,10 @@ import test from "node:test";
 import { hyperlink, parseCommand, processAlive, statePath } from "../index.js";
 
 test("parseCommand defaults to status", () => {
-  assert.deepEqual(parseCommand(""), { action: "status", pr: "" });
-  assert.deepEqual(parseCommand("start 42"), { action: "start", pr: "42" });
-  assert.deepEqual(parseCommand("stop"), { action: "stop", pr: "" });
+  assert.deepEqual(parseCommand(""), { action: "status", pr: "", repo: "" });
+  assert.deepEqual(parseCommand("start 42"), { action: "start", pr: "42", repo: "" });
+  assert.deepEqual(parseCommand("start 42 --repo C:/work/repo"), { action: "start", pr: "42", repo: "C:/work/repo" });
+  assert.deepEqual(parseCommand("stop"), { action: "stop", pr: "", repo: "" });
 });
 
 test("parseCommand rejects unsupported actions", () => {
