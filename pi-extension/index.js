@@ -278,7 +278,7 @@ export default function codexReviewLoopExtension(pi) {
         return;
       }
 
-      if (active && processAlive(active.pid)) {
+      if (active && isMonitorProcess(active.pid)) {
         notify(ctx, `Codex monitor is already running for PR #${active.pr}.`, "warning");
         return;
       }
