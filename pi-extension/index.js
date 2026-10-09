@@ -157,6 +157,7 @@ export { hyperlink, normalizePath, parseCommand, processAlive, readState, stateP
 export default function codexReviewLoopExtension(pi) {
   let active = null;
   let logWatcher = null;
+  let livenessTimer = null;
   let watcherGeneration = 0;
 
   const status = (ctx) => {
@@ -172,7 +173,9 @@ export default function codexReviewLoopExtension(pi) {
   const stopLogWatcher = () => {
     watcherGeneration += 1;
     if (logWatcher) logWatcher.close();
+    if (livenessTimer) clearInterval(livenessTimer);
     logWatcher = null;
+    livenessTimer = null;
   };
 
   const startLogWatcher = (state, ctx) => {
@@ -221,6 +224,10 @@ export default function codexReviewLoopExtension(pi) {
       if (generation === watcherGeneration) consumeLog();
     });
     consumeLog();
+    livenessTimer = setInterval(() => {
+      if (generation === watcherGeneration) consumeLog();
+    }, 5000);
+    livenessTimer.unref?.();
   };
 
   pi.registerCommand("codex-review-loop", {
