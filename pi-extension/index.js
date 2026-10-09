@@ -97,15 +97,19 @@ function syncStatus(ctx, state) {
 }
 
 async function readCodexSignal(state) {
-  const query = `query($o:String!,$n:String!,$p:Int!){repository(owner:$o,name:$n){pullRequest(number:$p){reactionGroups{content users(first:20){nodes{login}}} reviews(last:20){nodes{author{login} state}} comments(last:20){nodes{author{login}}}}}}`;
+  const query = `query($o:String!,$n:String!,$p:Int!){repository(owner:$o,name:$n){pullRequest(number:$p){reactionGroups{content users(first:20){nodes{login}}} reviews(last:20){nodes{author{login} state submittedAt}} comments(last:20){nodes{author{login} createdAt}}}}}}`;
   const { stdout } = await run("gh", ["api", "graphql", "-f", `query=${query}`, "-f", `o=${state.owner}`, "-f", `n=${state.name}`, "-F", `p=${state.pr}`], { cwd: state.cwd });
   const pr = JSON.parse(stdout).data.repository.pullRequest;
   const fromCodex = (login) => login?.startsWith("chatgpt-codex-connector");
   const reaction = (content) => pr.reactionGroups.some((group) => group.content === content && group.users.nodes.some((user) => fromCodex(user.login)));
-  if (reaction("EYES")) return "👀";
-  if (reaction("THUMBS_UP")) return "👍";
-  if (pr.reviews.nodes.some((review) => fromCodex(review.author?.login)) || pr.comments.nodes.some((comment) => fromCodex(comment.author?.login))) return "💬";
-  return "—";
+  const reviews = pr.reviews.nodes.filter((review) => fromCodex(review.author?.login));
+  const comments = pr.comments.nodes.filter((comment) => fromCodex(comment.author?.login));
+  let signal = "—";
+  if (reaction("EYES")) signal = "👀";
+  else if (reaction("THUMBS_UP")) signal = "👍";
+  else if (reviews.length || comments.length) signal = "💬";
+  const activity = [...reviews.map((review) => review.submittedAt), ...comments.map((comment) => comment.createdAt)].sort().at(-1) || "";
+  return { signal, activity };
 }
 
 async function assertGitRepository(cwd) {
@@ -168,8 +172,18 @@ export default function codexReviewLoopExtension(pi) {
     let offset = statSync(state.log).size;
     const refreshSignal = async () => {
       try {
-        state.codexSignal = await readCodexSignal(state);
+        const previousSignal = state.codexSignal;
+        const previousActivity = state.codexActivity;
+        const result = await readCodexSignal(state);
+        state.codexSignal = result.signal;
+        state.codexActivity = result.activity;
+        saveState(state.statePath, state);
         syncStatus(ctx, state);
+        if (result.activity && (result.activity !== previousActivity || (!previousSignal && result.signal !== "—"))) {
+          const message = `[Codex review loop] New Codex activity on ${state.owner}/${state.name}#${state.pr}: ${result.signal}. Inspect the latest GitHub review and act on justified findings.`;
+          notify(ctx, message, "info");
+          pi.sendUserMessage(message, { deliverAs: "followUp" });
+        }
       } catch {
         // Keep the last known signal while GitHub is temporarily unavailable.
       }
