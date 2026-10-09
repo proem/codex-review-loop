@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-PR=<num>; OWNER=<owner>; NAME=<repo>   # e.g. OWNER=acme NAME=widgets
-state=""; first=1; nudged_sha=""; GRACE=120   # seconds a green head may sit unreviewed before we nudge
+: "${PR:?PR is required}"
+: "${OWNER:?OWNER is required}"
+: "${NAME:?NAME is required}"
+state=""; first=1; nudged_sha=""; GRACE="${GRACE:-120}"   # seconds a green head may sit unreviewed before we nudge
 # Portable epoch: GNU date (Linux) first, BSD date (macOS) fallback.
 to_epoch(){ date -u -d "$1" +%s 2>/dev/null || date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$1" +%s 2>/dev/null || echo 0; }
 Q='query($o:String!,$n:String!,$p:Int!){ repository(owner:$o,name:$n){ pullRequest(number:$p){

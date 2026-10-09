@@ -52,9 +52,34 @@ The monitor watches Codex's reviews, fresh inline findings (unresolved review th
 
 **The monitor must also self-terminate on a quota block, not just self-heal.** A nudge assumes Codex is merely *behind*; a usage-limit reply means it *cannot* review at all until quota resets — hours away, not another poll cycle. Treating that reply as one more routine `comment ...` line to notice-and-judge cost a real run **3 hours** of silent waiting (on one production PR the quota reply arrived 29 seconds after push, and nobody acted on it until the user asked). So the script also checks every cycle for a Codex PR-issue comment matching the real, observed wording ("usage limits for code reviews" / "codex usage dashboard") and, on a match, prints an unmissable `[BLOCKED:QUOTA]` line and **exits the script** — ending the Monitor watch itself, not leaving a stdout line to be missed.
 
-Use a `persistent: true` Monitor task:
+## Run the monitor in Pi
 
-The script lives at `scripts/monitor.sh` inside this skill directory — set `PR`, `OWNER` and `NAME` at the top of that file (or export them and drop that first line), then run it as the Monitor task's command. It emits the event lines documented right below.
+Pi does not provide Claude Code's `persistent: true` Monitor task. Run the
+bundled script as a separate background process and redirect its output to a
+log file that Pi can read:
+
+```bash
+skill_dir="<skill-directory>"
+state_dir="${TMPDIR:-/tmp}/codex-review-loop-pr-123"
+mkdir -p "$state_dir"
+
+PR=123 OWNER=acme NAME=widgets \
+  nohup bash "$skill_dir/scripts/monitor.sh" \
+  > "$state_dir/monitor.log" 2>&1 &
+
+echo $! > "$state_dir/monitor.pid"
+```
+
+Replace the example PR, owner, repository, and skill directory values. The
+monitor emits the event lines documented below. Read `monitor.log` after
+startup and after each relevant event. No new output is not an approval
+signal.
+
+On Windows, run this command in Git Bash or WSL. The script requires Bash,
+`gh`, `jq`, and process substitution.
+
+If using Claude Code, its persistent task mechanism may be used instead, but
+Pi-specific instructions below use the background process and PID file.
 
 Exit / event signals (note: GraphQL login format is inconsistent across fields — `reviews.author.login` / `reviewThreads[].comments[].author.login` / `comments[].author.login` are the bare `chatgpt-codex-connector`, but `reactionGroups[].users.nodes[].login` carries a `[bot]` suffix, `chatgpt-codex-connector[bot]` — confirmed live: a real 👍 reaction sat undetected because an exact-match filter missed it. The reaction check above uses `startswith("chatgpt-codex-connector")` specifically to cover both forms; don't "simplify" it back to an exact match):
 - `[new] reaction +1 chatgpt-codex-connector[bot]` → the 👍 approval signal.
@@ -125,10 +150,14 @@ The exit is decided by **Stopping authority**'s three content-readiness gates (A
 - **no unresolved P0, and no unresolved P1 on the changed path.**
 Either one fails → **do not merge**, stop and report.
 
-Then `TaskStop` the monitor (harmless no-op if it already exited itself on `[BLOCKED:QUOTA]`):
+Then stop the monitor process (harmless no-op if it already exited itself
+on `[BLOCKED:QUOTA]`):
 
-```
-TaskStop(task_id=<monitor_id>)
+```bash
+if [ -f "$state_dir/monitor.pid" ]; then
+  kill "$(cat "$state_dir/monitor.pid")" 2>/dev/null || true
+  rm -f "$state_dir/monitor.pid"
+fi
 ```
 
 ## Anti-patterns
@@ -140,7 +169,7 @@ TaskStop(task_id=<monitor_id>)
 - ❌ **Re-evaluating a non-regression finding just because Codex re-filed it next round** — a re-file doesn't make it your regression. Archive it once; subsequent re-files count toward the round cap, not toward another fix.
 - ❌ Silently resolving a thread as if you fixed it — if you didn't fix it, the resolve must be preceded by a reply pointing to the follow-up issue (honest archive), never a quiet resolve that pretends it's done.
 - ❌ Idling on the 👍 when the floor is already reached (no unresolved P0, no P1 on the changed path, no regression of yours, CI green) — that's the loop that never ends. (The mirror error: don't self-approve a merge with "it's only P3" while a P0 or a P1-on-changed-path is open, or CI is red.)
-- ❌ Leaving the monitor running after merge — `TaskStop` it explicitly.
+- ❌ Leaving the monitor running after merge — stop the background process and remove its PID file explicitly.
 - ❌ Treating `eyes` as approval. It only means "I see new activity"; `+1` is approval.
 - ❌ **Sitting on a `[BLOCKED:QUOTA]` line (or an un-noticed quota-limit comment, on an older monitor without this check) as if it were routine polling noise** — it is a terminal state that does not resolve on the loop's timescale. Report to the user in the same turn you see it; don't keep the monitor running, don't push a commit hoping to re-trigger a review, and don't silently decide to merge (or not merge) on the user's behalf — that decision has more than one right answer and is theirs to make.
 
