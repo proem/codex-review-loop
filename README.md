@@ -86,6 +86,16 @@ npx skills add proem/codex-review-loop
 
 装好之后，在你想让 Codex 把关的一个开着的 PR 上触发它——比如说“watch codex on this PR”或者“盯着 codex 的 review”。完整的协议、决策规则、monitor 脚本和修复流程都在 [`skills/codex-review-loop/SKILL.md`](skills/codex-review-loop/SKILL.md) 里。
 
+如果作为 Pi package 加载，还提供以下命令：
+
+```text
+/codex-review-loop start [PR]  为当前仓库启动 Codex monitor
+/codex-review-loop status       查看 monitor 状态、PID 和日志路径
+/codex-review-loop stop        停止本 session 启动的 monitor
+```
+
+extension 只管理 monitor 进程。它不会修改、提交或合并代码。
+
 ## 许可证
 
 [MIT](LICENSE)

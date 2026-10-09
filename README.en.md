@@ -86,6 +86,16 @@ Restart your Claude Code session for it to take effect.
 
 Once installed, trigger it on an open PR you want Codex to gate — e.g. "watch codex on this PR" or "盯着 codex 的 review". The full protocol, decision rules, monitor script, and fix workflow live in [`skills/codex-review-loop/SKILL.md`](skills/codex-review-loop/SKILL.md).
 
+When loaded as a Pi package, the extension also provides:
+
+```text
+/codex-review-loop start [PR]  Start the Codex monitor for the current repository
+/codex-review-loop status       Show monitor status, PID, and log path
+/codex-review-loop stop        Stop the monitor started by this session
+```
+
+The extension only manages the monitor process. It does not modify, commit, or merge code.
+
 ## License
 
 [MIT](LICENSE)
