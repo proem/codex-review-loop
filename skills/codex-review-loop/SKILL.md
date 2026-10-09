@@ -1,19 +1,38 @@
 ---
 name: codex-review-loop
-description: Watch a GitHub PR for Codex AI review comments, author each fix in-loop, and stop at a sensible point instead of chasing Codex's nitpicks forever (Codex's 👍, or only non-regression nitpicks left → archive as follow-ups and close out). Use when the user says "盯着 codex 的 review", "等 codex 大拇指", "codex review loop", "watch codex on PR", "迭代修 codex 反馈", "codex pr iterate", "别让 codex 无限 review", or when they want a PR shepherded through automated review until approved. Also use when the user opens a PR and asks "盯一下，有问题就修" or "keep an eye on it and fix what comes up". Do NOT trigger when the repo has no `chatgpt-codex-connector[bot]` installed, when the user wants only human review, or when they ask to disable Codex.
+description: Shepherd an automated GitHub PR review: monitor findings, make justified fixes, resolve or defer threads, and stop safely instead of chasing endless nitpicks. Use when the user asks to watch an automated review, iterate on PR feedback, keep an eye on a PR and fix problems, or wait for review approval. The default implementation supports the Codex GitHub connector, with optional host-agent adaptations.
 ---
 
-# Codex Review Loop
+# Automated Review Loop
 
 Shepherd a GitHub PR through Codex AI review: monitor for new findings, author each fix in-loop, resolve threads, and **stop at a sensible point** — Codex's 👍, or a severity floor you judge (only non-regression nitpicks left → archive them as follow-ups and close out). Stopping authority is yours, not Codex's.
 
 ## When this applies
 
+This workflow applies to any automated GitHub PR reviewer. The default monitor and protocol below target the Codex GitHub connector.
+
 - Repo has `chatgpt-codex-connector[bot]` configured (check `gh api repos/<owner>/<repo>/pulls/$PR/reviews` for prior reviews from that user).
 - PR is open and the user wants Codex to gate the merge.
 - User has authorized you to push commits to the PR branch.
 
-## The Codex protocol (from its own About text)
+## Main workflow (agent-neutral)
+
+This workflow is host-agent neutral. Use it with Pi, Claude Code, Codex CLI, or another agent. Agent-specific execution details are optional conveniences only.
+
+1. Establish the repository, PR, head branch, reviewer identity, changed paths, CI requirements, and push or merge authorization.
+2. Verify GitHub authentication, `gh`, `jq`, the monitor, and reviewer availability. Stop and report missing prerequisites.
+3. Record the baseline head SHA, CI state, existing reviews, unresolved threads, and latest reviewer activity. An old approval or quiet monitor is not approval for a new head.
+4. Start one monitor. It must observe reviews, unresolved findings, reviewer comments, approval signals, CI, and terminal errors such as quota blocks.
+5. Wait while the reviewer processes the current head. Do not push during an in-flight review.
+6. Read and triage every finding: severity, changed-path relevance, regression ownership, and actionability.
+7. Fix only justified findings. Reproduce with a focused test when practical, make the smallest correct change, verify it, commit with traceability, push once, and wait for the next review.
+8. Archive deferred findings honestly. Use one aggregate follow-up issue when needed, reply with its link and rationale, then resolve the thread.
+9. Stop on reviewer approval, the severity floor, a scaled round cap, an operational block, or a human decision. A round cap never overrides a critical finding or confirmed regression.
+10. Report the final head SHA, CI state, blockers, deferred findings, monitor state, and merge eligibility. Merge only with explicit user authorization and passing safety gates. Stop and clean up the monitor.
+
+The agent owns triage and stopping decisions. Reviewer labels and approval signals are evidence, not authority.
+
+## The Codex protocol (default reviewer implementation)
 
 - Codex auto-reviews on PR open, draft→ready transitions, new commits to the head branch, or `@codex review` comments.
 - While processing it leaves an `eyes` reaction on the PR issue.
@@ -44,7 +63,7 @@ Codex can always surface one more nitpick. If its 👍 is the *only* exit, the l
 
 **Why the floor / cap exist (the deadlock)**: if you decline + resolve every non-regression P3 and *don't* push, no new commit means Codex never auto-re-reviews, so the 👍 never comes; and a thread you declined often gets **re-filed verbatim** next round. The floor exit cuts that tug-of-war — once you've judged a finding non-regression and archived it with a paper trail, you close out; you don't manufacture a fix to chase its 👍.
 
-## Setup — arm the monitor
+## Setup — arm the default Codex monitor
 
 The monitor watches Codex's reviews, fresh inline findings (unresolved review threads), its PR-issue comments (e.g. the quota/usage reply in the no-reaction fallback), the PR's 👍 reaction, and CI — all in **one GraphQL query per cycle**. Do NOT use the per-surface REST version: separate calls for reviews/comments/inline/checks plus an N+1 reactions loop, every 30s, burns the 5000/hr REST quota in minutes and starts 403-ing (observed live). GraphQL has its own point budget and one query covers every surface.
 
@@ -52,7 +71,11 @@ The monitor watches Codex's reviews, fresh inline findings (unresolved review th
 
 **The monitor must also self-terminate on a quota block, not just self-heal.** A nudge assumes Codex is merely *behind*; a usage-limit reply means it *cannot* review at all until quota resets — hours away, not another poll cycle. Treating that reply as one more routine `comment ...` line to notice-and-judge cost a real run **3 hours** of silent waiting (on one production PR the quota reply arrived 29 seconds after push, and nobody acted on it until the user asked). So the script also checks every cycle for a Codex PR-issue comment matching the real, observed wording ("usage limits for code reviews" / "codex usage dashboard") and, on a match, prints an unmissable `[BLOCKED:QUOTA]` line and **exits the script** — ending the Monitor watch itself, not leaving a stdout line to be missed.
 
-## Run the monitor in Pi
+## Agent integrations (nice to have)
+
+The workflow above is the source of truth. These sections only describe convenient ways to run the monitor in specific hosts.
+
+### Pi
 
 Pi does not provide Claude Code's `persistent: true` Monitor task. Run the
 bundled script as a separate background process and redirect its output to a
@@ -78,8 +101,27 @@ signal.
 On Windows, run this command in Git Bash or WSL. The script requires Bash,
 `gh`, `jq`, and process substitution.
 
-If using Claude Code, its persistent task mechanism may be used instead, but
-Pi-specific instructions below use the background process and PID file.
+### Claude Code
+
+Use a persistent background task or shell process if available. Keep the same
+monitor log, event handling, stopping gates, and cleanup rules. Do not treat a
+Claude Code task's continued existence as evidence that the reviewer is still
+working; inspect the reviewer's timestamps and monitor output.
+
+### Codex CLI
+
+Run the monitor as a separate shell process or through the CLI's background
+command facility. Keep the monitor PID and log path in the session context.
+The Codex CLI driving this workflow is the host agent; the GitHub Codex
+connector being monitored is a separate reviewer and must not be confused
+with the host agent.
+
+### Other agents
+
+Use the same `monitor.sh` contract when the agent can run Bash, `gh`, and
+`jq`. Otherwise implement an equivalent watcher that preserves the event
+contract and bounded one-nudge-per-head behavior. Do not weaken the stopping
+gates to fit a host-specific task API.
 
 Exit / event signals (note: GraphQL login format is inconsistent across fields — `reviews.author.login` / `reviewThreads[].comments[].author.login` / `comments[].author.login` are the bare `chatgpt-codex-connector`, but `reactionGroups[].users.nodes[].login` carries a `[bot]` suffix, `chatgpt-codex-connector[bot]` — confirmed live: a real 👍 reaction sat undetected because an exact-match filter missed it. The reaction check above uses `startswith("chatgpt-codex-connector")` specifically to cover both forms; don't "simplify" it back to an exact match):
 - `[new] reaction +1 chatgpt-codex-connector[bot]` → the 👍 approval signal.
