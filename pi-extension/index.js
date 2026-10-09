@@ -62,13 +62,14 @@ function removeState(path) {
   try { unlinkSync(path); } catch { /* already stopped */ }
 }
 
-function findPersistedState() {
+function findPersistedState(cwd, repository) {
   try {
     return readdirSync(tmpdir())
       .filter((name) => name.startsWith("pi-codex-review-loop-") && name.endsWith(".json"))
       .map((name) => join(tmpdir(), name))
       .map((path) => ({ path, state: readState(path) }))
-      .filter(({ state }) => state && processAlive(state.pid))
+      .filter(({ state }) => state && processAlive(state.pid)
+        && (state.cwd === cwd || (repository && state.owner === repository.owner && state.name === repository.name)))
       .sort((a, b) => (b.state.startedAt || "").localeCompare(a.state.startedAt || ""))[0]?.state || null;
   } catch {
     return null;
@@ -278,11 +279,13 @@ export default function codexReviewLoopExtension(pi) {
   });
 
   pi.on("session_start", async (_event, ctx) => {
-    active = findPersistedState();
+    const cwd = ctx.cwd || process.cwd();
+    let repository = null;
+    try { repository = await resolveRepository(cwd); } catch { /* non-repository session */ }
+    active = findPersistedState(cwd, repository);
     if (active) {
       syncStatus(ctx, active);
       startLogWatcher(active, ctx);
-      notify(ctx, `Codex monitor resumed for ${active.owner}/${active.name}#${active.pr}.`, "info");
     } else {
       syncStatus(ctx, null);
     }
