@@ -93,7 +93,7 @@ function syncStatus(ctx, state) {
   const label = `${state.owner}/${state.name}#${state.pr}`;
   const link = hyperlink(label, state.url);
   const signal = state.codexSignal || "—";
-  ctx?.ui?.setStatus?.(STATUS_KEY, `Codex ${signal} · ${state.status} · ${link}`);
+  ctx?.ui?.setStatus?.(STATUS_KEY, `Codex ${signal} · ${link}`);
 }
 
 async function readCodexSignal(state) {
