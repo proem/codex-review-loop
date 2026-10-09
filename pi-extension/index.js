@@ -66,14 +66,20 @@ function removeState(path) {
   try { unlinkSync(path); } catch { /* already stopped */ }
 }
 
+function normalizePath(value) {
+  return resolve(String(value || "")).replaceAll("\\", "/").toLowerCase();
+}
+
 function findPersistedState(cwd, repository) {
   try {
+    const normalizedCwd = normalizePath(cwd);
     return readdirSync(tmpdir())
       .filter((name) => name.startsWith("pi-codex-review-loop-") && name.endsWith(".json"))
       .map((name) => join(tmpdir(), name))
       .map((path) => ({ path, state: readState(path) }))
       .filter(({ state }) => state && processAlive(state.pid)
-        && (state.cwd === cwd || (repository && state.owner === repository.owner && state.name === repository.name)))
+        && (normalizePath(state.cwd) === normalizedCwd
+          || (repository && state.owner === repository.owner && state.name === repository.name)))
       .sort((a, b) => (b.state.startedAt || "").localeCompare(a.state.startedAt || ""))[0]?.state || null;
   } catch {
     return null;
@@ -147,7 +153,7 @@ function stopState(state, path) {
   removeState(path);
 }
 
-export { hyperlink, parseCommand, processAlive, readState, statePath, validatePrIdentifier };
+export { hyperlink, normalizePath, parseCommand, processAlive, readState, statePath, validatePrIdentifier };
 
 export default function codexReviewLoopExtension(pi) {
   let active = null;
