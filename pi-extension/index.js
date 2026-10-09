@@ -58,7 +58,9 @@ function isMonitorProcess(pid) {
   try {
     const command = process.platform === "win32"
       ? execFileSync("powershell.exe", ["-NoProfile", "-Command", `(Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}').CommandLine`], { encoding: "utf8" })
-      : readFileSync(`/proc/${pid}/cmdline`, "utf8");
+      : process.platform === "darwin"
+        ? execFileSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8" })
+        : readFileSync(`/proc/${pid}/cmdline`, "utf8");
     return command.includes("codex-review-loop") && command.includes("monitor.sh");
   } catch {
     return false;
@@ -79,7 +81,8 @@ function removeState(path) {
 }
 
 function normalizePath(value) {
-  return resolve(String(value || "")).replaceAll("\\", "/").toLowerCase();
+  const normalized = resolve(String(value || "")).replaceAll("\\", "/");
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 function findPersistedState(cwd, repository) {
