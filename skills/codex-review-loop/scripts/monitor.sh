@@ -57,7 +57,12 @@ while true; do
     lastReview=$(printf '%s' "$out" | jq -r '[.data.repository.pullRequest.reviews.nodes[] | select(.author.login=="chatgpt-codex-connector") | .submittedAt] | last // ""')
     elapsed=$(( $(date -u +%s) - $(to_epoch "$headTime") ))
     if [ "$ci" = "SUCCESS" ] && [ "$eyes" = "0" ] && [ "$up" = "0" ] && [ "$nudged_sha" != "$head" ] && [ "$elapsed" -ge "$GRACE" ] && { [ -z "$lastReview" ] || [[ "$headTime" > "$lastReview" ]]; }; then
-      if gh pr comment "$PR" --body "@codex review" >/dev/null 2>&1; then
+      if [ -n "${GH_REPO:-}" ]; then
+        gh pr comment "$PR" --repo "$GH_REPO" --body "@codex review" >/dev/null 2>&1
+      else
+        gh pr comment "$PR" --body "@codex review" >/dev/null 2>&1
+      fi
+      if [ $? -eq 0 ]; then
         nudged_sha="$head"
         echo "[nudge] auto @codex review — head ${head:0:8} green + unreviewed ${elapsed}s (no eyes/👍, newer than last review '${lastReview}')"
       fi

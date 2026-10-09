@@ -90,6 +90,7 @@ When loaded as a Pi package, the extension also provides:
 
 ```text
 /codex-review-loop start [PR]  Start the Codex monitor for the current repository
+/codex-review-loop start https://github.com/owner/repo/pull/1  Start directly from a PR URL
 /codex-review-loop status       Show monitor status, PID, and log path
 /codex-review-loop stop        Stop the monitor started by this session
 ```

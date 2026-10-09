@@ -22,6 +22,11 @@ function run(file, args, options = {}) {
   });
 }
 
+function parsePullRequestUrl(value) {
+  const match = String(value || "").match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:[/?#].*)?$/i);
+  return match ? { owner: match[1], name: match[2], pr: match[3] } : null;
+}
+
 function parseCommand(text) {
   const parts = String(text || "").trim().split(/\s+/).filter(Boolean);
   const [action = "status", ...rest] = parts;
@@ -29,7 +34,8 @@ function parseCommand(text) {
   const repoFlag = rest.indexOf("--repo");
   const repo = repoFlag >= 0 ? rest[repoFlag + 1] || "" : "";
   const positional = repoFlag >= 0 ? rest.filter((_part, index) => index !== repoFlag && index !== repoFlag + 1) : rest;
-  return { action, pr: positional[0] || "", repo };
+  const reference = parsePullRequestUrl(positional[0]);
+  return reference ? { action, ...reference, repo } : { action, pr: positional[0] || "", repo };
 }
 
 function statePath(cwd, pr) {
@@ -159,9 +165,10 @@ export default function codexReviewLoopExtension(pi) {
       }
 
       try {
-        const repoCwd = await assertGitRepository(cwd);
-        const pr = await resolvePullRequest(repoCwd, parsed.pr);
-        const { owner, name } = await resolveRepository(repoCwd);
+        const hasGithubReference = parsed.owner && parsed.name && parsed.pr;
+        const repoCwd = hasGithubReference || parsed.repo ? cwd : await assertGitRepository(cwd);
+        const pr = parsed.pr || await resolvePullRequest(repoCwd, parsed.pr);
+        const { owner, name } = hasGithubReference ? parsed : await resolveRepository(repoCwd);
         const path = statePath(repoCwd, pr);
         const previous = readState(path);
         if (previous && processAlive(previous.pid)) {
@@ -176,7 +183,7 @@ export default function codexReviewLoopExtension(pi) {
         const child = spawn("bash", [MONITOR_SCRIPT], {
           cwd: repoCwd,
           detached: true,
-          env: { ...process.env, PR: pr, OWNER: owner, NAME: name },
+          env: { ...process.env, PR: pr, OWNER: owner, NAME: name, GH_REPO: `${owner}/${name}` },
           stdio: ["ignore", logFd, logFd],
         });
         child.unref();

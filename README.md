@@ -90,6 +90,7 @@ npx skills add proem/codex-review-loop
 
 ```text
 /codex-review-loop start [PR]  为当前仓库启动 Codex monitor
+/codex-review-loop start https://github.com/owner/repo/pull/1  直接按 PR 链接启动
 /codex-review-loop status       查看 monitor 状态、PID 和日志路径
 /codex-review-loop stop        停止本 session 启动的 monitor
 ```
