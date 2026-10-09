@@ -11,6 +11,22 @@ Handle Codex review comments on a GitHub PR: monitor Codex findings, make justif
 
 This workflow applies specifically to Codex GitHub PR reviews. The default monitor and protocol below target the Codex GitHub connector.
 
+### Mandatory prerequisite: install the Codex GitHub App
+
+Before starting the workflow, the target GitHub account or organization **must have the ChatGPT Codex Connector installed and authorized for the target repository**:
+
+[Install ChatGPT Codex Connector](https://github.com/apps/chatgpt-codex-connector)
+
+In the GitHub App installation flow, choose the target account or organization, select **Only select repositories**, and grant access to the repository being reviewed. Do not treat a successfully posted `@codex review` comment as proof that the App is installed: the comment can be posted by any user even when Codex has no access.
+
+Verify the prerequisite before starting the monitor:
+
+```bash
+gh api repos/<owner>/<repo>/installation
+```
+
+If this returns an authorization or installation error, or if a test `@codex review` produces no `chatgpt-codex-connector[bot]` reaction, review, or comment, stop and report that the Codex GitHub App is not available for this repository. Do not keep posting repeated trigger comments.
+
 - Repo has `chatgpt-codex-connector[bot]` configured (check `gh api repos/<owner>/<repo>/pulls/$PR/reviews` for prior reviews from that user).
 - PR is open and the user wants Codex to gate the merge.
 - User has authorized you to push commits to the PR branch.
@@ -20,7 +36,7 @@ This workflow applies specifically to Codex GitHub PR reviews. The default monit
 This workflow is host-agent neutral. Use it with Pi, Claude Code, Codex CLI, or another agent. Agent-specific execution details are optional conveniences only.
 
 1. Establish the repository, PR, head branch, Codex reviewer identity, changed paths, CI requirements, and push or merge authorization.
-2. Verify GitHub authentication, `gh`, `jq`, the monitor, and reviewer availability. Stop and report missing prerequisites.
+2. Verify the mandatory Codex GitHub App installation and repository authorization, then verify GitHub authentication, `gh`, `jq`, the monitor, and reviewer availability. Stop and report missing prerequisites.
 3. Record the baseline head SHA, CI state, existing reviews, unresolved threads, and latest reviewer activity. An old approval or quiet monitor is not approval for a new head.
 4. Start one Codex monitor. It must observe Codex reviews, unresolved findings, Codex comments, approval signals, CI, and terminal errors such as quota blocks.
 5. Wait while the reviewer processes the current head. Do not push during an in-flight review.

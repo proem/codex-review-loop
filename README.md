@@ -66,7 +66,9 @@ Codex 总能再挑出一条 nitpick，而且它在 push 之后的自动 review �
 
 - [`gh`](https://cli.github.com/)（GitHub CLI），并已针对目标仓库完成认证。
 - `jq`。
-- 目标仓库已安装 [Codex GitHub 连接器](https://developers.openai.com/codex)，这样 `chatgpt-codex-connector[bot]` 才会真的去 review PR。
+- **目标 GitHub 账号或组织必须已安装并授权 [ChatGPT Codex Connector](https://github.com/apps/chatgpt-codex-connector) 到目标仓库**。安装时选择目标账号或组织，也可以用 **Only select repositories** 限定仓库。
+- 可以用 `gh api repos/<owner>/<repo>/installation` 验证 App 安装状态。
+- 仅成功发布 `@codex review` 评论不代表 App 已接入；如果没有 `chatgpt-codex-connector[bot]` 的 `👀`、review 或 comment，应停止重复触发并先检查 App 权限。
 
 ## 安装
 

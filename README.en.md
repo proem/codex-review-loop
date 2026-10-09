@@ -66,7 +66,9 @@ Codex can always surface one more nitpick, and auto-review-on-push is unreliable
 
 - [`gh`](https://cli.github.com/) (GitHub CLI), authenticated against the target repo.
 - `jq`.
-- A repository with the [Codex GitHub connector](https://developers.openai.com/codex) installed, so `chatgpt-codex-connector[bot]` actually reviews PRs.
+- **The target GitHub account or organization must install and authorize the [ChatGPT Codex Connector](https://github.com/apps/chatgpt-codex-connector) for the target repository.** During installation, choose the target account or organization and optionally use **Only select repositories**.
+- Verify the installation with `gh api repos/<owner>/<repo>/installation`.
+- Successfully posting `@codex review` does not prove that the App is connected. If there is no `chatgpt-codex-connector[bot]` `👀` reaction, review, or comment, stop posting triggers and check the App permissions first.
 
 ## Installation
 
