@@ -7,7 +7,7 @@ state=""; first=1; nudged_sha=""; GRACE="${GRACE:-120}"   # seconds a green head
 to_epoch(){ date -u -d "$1" +%s 2>/dev/null || date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$1" +%s 2>/dev/null || echo 0; }
 Q='query($o:String!,$n:String!,$p:Int!){ repository(owner:$o,name:$n){ pullRequest(number:$p){
   reactionGroups{ content users(first:10){ nodes{ login } } }
-  reviews(last:8){ nodes{ author{ login } submittedAt } }
+  reviews(last:8){ nodes{ author{ login } submittedAt commit{ oid } } }
   reviewThreads(first:60){ nodes{ isResolved comments(first:1){ nodes{ databaseId author{ login } path line } } } }
   comments(last:8){ nodes{ author{ login } body } }
   commits(last:1){ nodes{ commit{ oid committedDate statusCheckRollup{ state } } } } } } }'
@@ -55,8 +55,9 @@ while true; do
     eyes=$(printf '%s' "$out" | jq -r '[.data.repository.pullRequest.reactionGroups[] | select(.content=="EYES") | .users.nodes[] | select(.login|startswith("chatgpt-codex-connector"))] | length')
     up=$(printf '%s' "$out" | jq -r '[.data.repository.pullRequest.reactionGroups[] | select(.content=="THUMBS_UP") | .users.nodes[] | select(.login|startswith("chatgpt-codex-connector"))] | length')
     lastReview=$(printf '%s' "$out" | jq -r '[.data.repository.pullRequest.reviews.nodes[] | select(.author.login=="chatgpt-codex-connector") | .submittedAt] | last // ""')
+    lastReviewHead=$(printf '%s' "$out" | jq -r '[.data.repository.pullRequest.reviews.nodes[] | select(.author.login=="chatgpt-codex-connector") | .commit.oid // ""] | last // ""')
     elapsed=$(( $(date -u +%s) - $(to_epoch "$headTime") ))
-    if [ "$ci" = "SUCCESS" ] && [ "$eyes" = "0" ] && [ "$up" = "0" ] && [ "$nudged_sha" != "$head" ] && [ "$elapsed" -ge "$GRACE" ] && { [ -z "$lastReview" ] || [[ "$headTime" > "$lastReview" ]]; }; then
+    if [ "$ci" = "SUCCESS" ] && [ "$nudged_sha" != "$head" ] && [ "$elapsed" -ge "$GRACE" ] && [ "$lastReviewHead" != "$head" ] && { [ -z "$lastReview" ] || [[ "$headTime" > "$lastReview" ]]; }; then
       if [ -n "${GH_REPO:-}" ]; then
         gh pr comment "$PR" --repo "$GH_REPO" --body "@codex review" >/dev/null 2>&1
       else

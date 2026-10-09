@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -53,6 +53,18 @@ function processAlive(pid) {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
+function isMonitorProcess(pid) {
+  if (!processAlive(pid)) return false;
+  try {
+    const command = process.platform === "win32"
+      ? execFileSync("powershell.exe", ["-NoProfile", "-Command", `(Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}').CommandLine`], { encoding: "utf8" })
+      : readFileSync(`/proc/${pid}/cmdline`, "utf8");
+    return command.includes("codex-review-loop") && command.includes("monitor.sh");
+  } catch {
+    return false;
+  }
+}
+
 function validatePrIdentifier(value) {
   return /^(?:[1-9]\d*)$/.test(String(value || ""));
 }
@@ -77,7 +89,7 @@ function findPersistedState(cwd, repository) {
       .filter((name) => name.startsWith("pi-codex-review-loop-") && name.endsWith(".json"))
       .map((name) => join(tmpdir(), name))
       .map((path) => ({ path, state: readState(path) }))
-      .filter(({ state }) => state && processAlive(state.pid)
+      .filter(({ state }) => state && isMonitorProcess(state.pid)
         && (normalizePath(state.cwd) === normalizedCwd
           || (repository && state.owner === repository.owner && state.name === repository.name)))
       .sort((a, b) => (b.state.startedAt || "").localeCompare(a.state.startedAt || ""))[0]?.state || null;
@@ -147,7 +159,7 @@ async function resolveRepository(cwd) {
 }
 
 function stopState(state, path) {
-  if (state && processAlive(state.pid)) {
+  if (state && isMonitorProcess(state.pid)) {
     try { process.kill(state.pid, "SIGTERM"); } catch { /* exited between the check and kill */ }
   }
   removeState(path);
@@ -159,10 +171,11 @@ export default function codexReviewLoopExtension(pi) {
   let active = null;
   let logWatcher = null;
   let signalWatcher = null;
+  let watcherGeneration = 0;
 
   const status = (ctx) => {
     if (!active) return null;
-    if (!processAlive(active.pid)) {
+    if (!isMonitorProcess(active.pid)) {
       active = { ...active, status: "stopped" };
       syncStatus(ctx, active);
       return active;
@@ -171,6 +184,7 @@ export default function codexReviewLoopExtension(pi) {
   };
 
   const stopLogWatcher = () => {
+    watcherGeneration += 1;
     if (logWatcher) clearInterval(logWatcher);
     if (signalWatcher) clearInterval(signalWatcher);
     logWatcher = null;
@@ -179,12 +193,14 @@ export default function codexReviewLoopExtension(pi) {
 
   const startLogWatcher = (state, ctx) => {
     stopLogWatcher();
+    const generation = watcherGeneration;
     let offset = Number.isInteger(state.logOffset) ? state.logOffset : 0;
     const refreshSignal = async () => {
       try {
         const previousSignal = state.codexSignal;
         const previousActivity = state.codexActivity;
         const result = await readCodexSignal(state);
+        if (generation !== watcherGeneration || active?.statePath !== state.statePath) return;
         state.codexSignal = result.signal;
         state.codexActivity = result.activity;
         saveState(state.statePath, state);
@@ -272,12 +288,12 @@ export default function codexReviewLoopExtension(pi) {
         const repoCwd = hasGithubReference || parsed.repo ? cwd : await assertGitRepository(cwd);
         const pr = parsed.pr || await resolvePullRequest(repoCwd, parsed.pr);
         if (!validatePrIdentifier(pr)) throw new Error(`Invalid pull request number: ${pr}`);
-        const { stdout: prCheck } = await run("gh", ["pr", "view", pr, "--repo", hasGithubReference ? `${parsed.owner}/${parsed.name}` : undefined].filter(Boolean), { cwd: repoCwd });
-        if (!prCheck.trim()) throw new Error(`Pull request #${pr} was not found.`);
+        const { stdout: prCheck } = await run("gh", ["pr", "view", pr, "--repo", hasGithubReference ? `${parsed.owner}/${parsed.name}` : undefined, "--json", "state", "--jq", ".state"].filter(Boolean), { cwd: repoCwd });
+        if (prCheck.trim() !== "OPEN") throw new Error(`Pull request #${pr} is not open.`);
         const { owner, name } = hasGithubReference ? parsed : await resolveRepository(repoCwd);
         const path = statePath(repoCwd, pr);
         const previous = readState(path);
-        if (previous && processAlive(previous.pid)) {
+        if (previous && isMonitorProcess(previous.pid)) {
           active = previous;
           syncStatus(ctx, active);
           notify(ctx, `Codex monitor is already running for PR #${pr}.`, "warning");
@@ -285,7 +301,7 @@ export default function codexReviewLoopExtension(pi) {
         }
 
         const log = `${path}.log`;
-        const logFd = openSync(log, "a");
+        const logFd = openSync(log, "w");
         const child = spawn("bash", [MONITOR_SCRIPT], {
           cwd: repoCwd,
           detached: true,
