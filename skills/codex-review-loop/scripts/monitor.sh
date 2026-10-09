@@ -31,9 +31,10 @@ while true; do
       # Leave the current head eligible for recovery. The in-flight check below
       # suppresses a duplicate nudge when Codex is already reviewing it.
       nudged_sha=""
-      printf '%s\n' "$(jq -cn --arg detail "PR #$PR self-healing monitor armed" '{type:"signal",signal:"—",detail:$detail}')"
+      printf '[init] PR #%s self-healing monitor armed (auto-nudges @codex on a green, unreviewed head)\n' "$PR"
     else
       comm -13 <(printf '%s' "$state") <(printf '%s' "$cur") | grep -v '^$' | while IFS= read -r line; do
+        printf '[new] %s\n' "$line"
         printf '%s\n' "$(jq -cn --arg detail "$line" '{type:"activity",detail:$detail}')"
       done
     fi
@@ -51,7 +52,9 @@ while true; do
     # line, and there is nothing more this loop can do until quota resets.
     quotaComment=$(printf '%s' "$out" | jq -r --arg started "$started_at" '[.data.repository.pullRequest.comments.nodes[] | select(.author.login=="chatgpt-codex-connector") | select(.createdAt > $started) | select(.body | test("usage limits for code reviews|codex usage dashboard"; "i"))] | last | .body // empty')
     if [ -n "$quotaComment" ]; then
-      printf '%s\n' "$(jq -cn --arg message "Codex hit its review usage limit — the loop cannot proceed automatically until quota resets. Reply: $(printf '%s' "$quotaComment" | tr '\n' ' ' | cut -c1-200)" '{type:"quota",message:$message}')"
+      quotaMessage="Codex hit its review usage limit — the loop cannot proceed automatically until quota resets. Reply: $(printf '%s' "$quotaComment" | tr '\n' ' ' | cut -c1-200)"
+      printf '[BLOCKED:QUOTA] %s\n' "$quotaMessage"
+      printf '%s\n' "$(jq -cn --arg message "$quotaMessage" '{type:"quota",message:$message}')"
       exit 0
     fi
 
@@ -77,7 +80,9 @@ while true; do
       fi
       if [ $? -eq 0 ]; then
         nudged_sha="$head"
-        printf '%s\n' "$(jq -cn --arg detail "auto @codex review — head ${head:0:8} green + unreviewed ${elapsed}s (no eyes/👍, newer than last review '${lastReview}')" '{type:"activity",detail:$detail}')"
+        nudgeDetail="auto @codex review — head ${head:0:8} green + unreviewed ${elapsed}s (no eyes/👍, newer than last review '${lastReview}')"
+        printf '[nudge] %s\n' "$nudgeDetail"
+        printf '%s\n' "$(jq -cn --arg detail "$nudgeDetail" '{type:"activity",detail:$detail}')"
       fi
     fi
   fi

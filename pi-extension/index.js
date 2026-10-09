@@ -217,10 +217,10 @@ export default function codexReviewLoopExtension(pi) {
         // The monitor may exit while its log is being rotated or cleaned up.
       }
     };
-    consumeLog();
     logWatcher = watch(state.log, { persistent: false }, (_eventType) => {
       if (generation === watcherGeneration) consumeLog();
     });
+    consumeLog();
   };
 
   pi.registerCommand("codex-review-loop", {
