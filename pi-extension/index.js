@@ -49,7 +49,7 @@ function readState(path) {
 }
 
 function processAlive(pid) {
-  if (!Number.isInteger(pid)) return false;
+  if (!Number.isInteger(pid) || pid <= 0) return false;
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
@@ -169,7 +169,7 @@ export default function codexReviewLoopExtension(pi) {
 
   const startLogWatcher = (state, ctx) => {
     stopLogWatcher();
-    let offset = statSync(state.log).size;
+    let offset = Number.isInteger(state.logOffset) ? state.logOffset : 0;
     const refreshSignal = async () => {
       try {
         const previousSignal = state.codexSignal;
@@ -203,6 +203,8 @@ export default function codexReviewLoopExtension(pi) {
         const content = readFileSync(state.log, "utf8");
         const lines = content.slice(offset).split(/\r?\n/).filter(Boolean);
         offset = content.length;
+        state.logOffset = offset;
+        saveState(state.statePath, state);
         for (const line of lines) {
           if (!/^\[(new|nudge|BLOCKED:QUOTA)\]/.test(line)) continue;
           const message = `[Codex review loop] ${state.owner}/${state.name}#${state.pr}: ${line}`;
@@ -277,15 +279,26 @@ export default function codexReviewLoopExtension(pi) {
           env: { ...process.env, PR: pr, OWNER: owner, NAME: name, GH_REPO: `${owner}/${name}` },
           stdio: ["ignore", logFd, logFd],
         });
-        child.unref();
-
         const url = `https://github.com/${owner}/${name}/pull/${pr}`;
-        active = { pid: child.pid, pr, owner, name, url, cwd: repoCwd, log, statePath: path, status: "running", reviewer: REVIEWER, startedAt: new Date().toISOString() };
-        saveState(path, active);
-        pi.appendEntry("codex-review-loop", { action: "start", ...active });
-        syncStatus(ctx, active);
-        startLogWatcher(active, ctx);
-        notify(ctx, `Codex monitor started for ${owner}/${name}#${pr}.\nLog: ${log}`, "info");
+        const startedAt = new Date().toISOString();
+        const nextState = { pid: child.pid, pr, owner, name, url, cwd: repoCwd, log, statePath: path, status: "running", reviewer: REVIEWER, startedAt, logOffset: 0 };
+        child.once("error", (error) => {
+          if (active?.pid !== child.pid) return;
+          stopLogWatcher();
+          active = null;
+          removeState(path);
+          syncStatus(ctx, null);
+          notify(ctx, `Could not start Codex monitor: ${error.message}`, "error");
+        });
+        child.once("spawn", () => {
+          saveState(path, nextState);
+          active = nextState;
+          pi.appendEntry("codex-review-loop", { action: "start", ...active });
+          syncStatus(ctx, active);
+          startLogWatcher(active, ctx);
+          notify(ctx, `Codex monitor started for ${owner}/${name}#${pr}.\nLog: ${log}`, "info");
+        });
+        child.unref();
       } catch (error) {
         notify(ctx, `Could not start Codex monitor: ${error.message}`, "error");
       }

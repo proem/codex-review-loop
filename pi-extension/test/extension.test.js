@@ -31,6 +31,7 @@ test("statePath is stable and scoped by working directory and PR", () => {
 
 test("processAlive rejects invalid PIDs", () => {
   assert.equal(processAlive(undefined), false);
+  assert.equal(processAlive(0), false);
   assert.equal(processAlive(-1), false);
 });
 
