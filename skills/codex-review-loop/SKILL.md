@@ -1,28 +1,28 @@
 ---
 name: codex-review-loop
-description: Shepherd an automated GitHub PR review: monitor findings, make justified fixes, resolve or defer threads, and stop safely instead of chasing endless nitpicks. Use when the user asks to watch an automated review, iterate on PR feedback, keep an eye on a PR and fix problems, or wait for review approval. The default implementation supports the Codex GitHub connector, with optional host-agent adaptations.
+description: Handle Codex GitHub PR review comments: monitor Codex findings, make justified fixes, resolve or defer threads, and stop safely instead of chasing endless nitpicks. Use when the user asks to watch Codex review, iterate on Codex PR feedback, keep an eye on a PR and fix Codex findings, or wait for Codex approval. Supports Pi, Claude Code, Codex CLI, and other host agents.
 ---
 
-# Automated Review Loop
+# Codex GitHub Review Loop
 
-Shepherd a GitHub PR through Codex AI review: monitor for new findings, author each fix in-loop, resolve threads, and **stop at a sensible point** — Codex's 👍, or a severity floor you judge (only non-regression nitpicks left → archive them as follow-ups and close out). Stopping authority is yours, not Codex's.
+Handle Codex review comments on a GitHub PR: monitor Codex findings, make justified fixes, resolve or defer threads, and **stop at a safe point** — Codex's 👍, or a severity floor you judge (only non-regression nitpicks left → archive them as follow-ups and close out). Stopping authority is yours, not Codex's.
 
 ## When this applies
 
-This workflow applies to any automated GitHub PR reviewer. The default monitor and protocol below target the Codex GitHub connector.
+This workflow applies specifically to Codex GitHub PR reviews. The default monitor and protocol below target the Codex GitHub connector.
 
 - Repo has `chatgpt-codex-connector[bot]` configured (check `gh api repos/<owner>/<repo>/pulls/$PR/reviews` for prior reviews from that user).
 - PR is open and the user wants Codex to gate the merge.
 - User has authorized you to push commits to the PR branch.
 
-## Main workflow (agent-neutral)
+## Main workflow (agent-neutral host layer)
 
 This workflow is host-agent neutral. Use it with Pi, Claude Code, Codex CLI, or another agent. Agent-specific execution details are optional conveniences only.
 
-1. Establish the repository, PR, head branch, reviewer identity, changed paths, CI requirements, and push or merge authorization.
+1. Establish the repository, PR, head branch, Codex reviewer identity, changed paths, CI requirements, and push or merge authorization.
 2. Verify GitHub authentication, `gh`, `jq`, the monitor, and reviewer availability. Stop and report missing prerequisites.
 3. Record the baseline head SHA, CI state, existing reviews, unresolved threads, and latest reviewer activity. An old approval or quiet monitor is not approval for a new head.
-4. Start one monitor. It must observe reviews, unresolved findings, reviewer comments, approval signals, CI, and terminal errors such as quota blocks.
+4. Start one Codex monitor. It must observe Codex reviews, unresolved findings, Codex comments, approval signals, CI, and terminal errors such as quota blocks.
 5. Wait while the reviewer processes the current head. Do not push during an in-flight review.
 6. Read and triage every finding: severity, changed-path relevance, regression ownership, and actionability.
 7. Fix only justified findings. Reproduce with a focused test when practical, make the smallest correct change, verify it, commit with traceability, push once, and wait for the next review.
@@ -63,7 +63,7 @@ Codex can always surface one more nitpick. If its 👍 is the *only* exit, the l
 
 **Why the floor / cap exist (the deadlock)**: if you decline + resolve every non-regression P3 and *don't* push, no new commit means Codex never auto-re-reviews, so the 👍 never comes; and a thread you declined often gets **re-filed verbatim** next round. The floor exit cuts that tug-of-war — once you've judged a finding non-regression and archived it with a paper trail, you close out; you don't manufacture a fix to chase its 👍.
 
-## Setup — arm the default Codex monitor
+## Setup — arm the Codex monitor
 
 The monitor watches Codex's reviews, fresh inline findings (unresolved review threads), its PR-issue comments (e.g. the quota/usage reply in the no-reaction fallback), the PR's 👍 reaction, and CI — all in **one GraphQL query per cycle**. Do NOT use the per-surface REST version: separate calls for reviews/comments/inline/checks plus an N+1 reactions loop, every 30s, burns the 5000/hr REST quota in minutes and starts 403-ing (observed live). GraphQL has its own point budget and one query covers every surface.
 
