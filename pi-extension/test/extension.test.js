@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { hyperlink, normalizePath, parseCommand, processAlive, statePath, validatePrIdentifier } from "../index.js";
+import { hyperlink, monitorShell, normalizePath, parseCommand, processAlive, statePath, validatePrIdentifier } from "../index.js";
 
 test("parseCommand defaults to status", () => {
   assert.deepEqual(parseCommand(""), { action: "status", pr: "", repo: "" });
@@ -31,6 +31,10 @@ test("statePath is stable and scoped by working directory and PR", () => {
 
 test("normalizePath compares Windows path separators consistently", () => {
   assert.equal(normalizePath("C:\\Users\\yibo"), normalizePath("c:/users/yibo"));
+});
+
+test("monitor shell is available", () => {
+  assert.ok(monitorShell());
 });
 
 test("processAlive rejects invalid PIDs", () => {

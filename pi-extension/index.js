@@ -48,6 +48,16 @@ function readState(path) {
   try { return JSON.parse(readFileSync(path, "utf8")); } catch { return null; }
 }
 
+function monitorShell() {
+  if (process.platform !== "win32") return "bash";
+  const candidates = [process.env.PI_CODEX_BASH, "C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files\\Git\\usr\\bin\\bash.exe"];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try { if (statSync(candidate).isFile()) return candidate; } catch { /* try the next location */ }
+  }
+  return "bash.exe";
+}
+
 function processAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try { process.kill(pid, 0); return true; } catch { return false; }
@@ -152,7 +162,7 @@ function stopState(state, path) {
   removeState(path);
 }
 
-export { hyperlink, normalizePath, parseCommand, processAlive, readState, statePath, validatePrIdentifier };
+export { hyperlink, monitorShell, normalizePath, parseCommand, processAlive, readState, statePath, validatePrIdentifier };
 
 export default function codexReviewLoopExtension(pi) {
   let active = null;
@@ -188,7 +198,11 @@ export default function codexReviewLoopExtension(pi) {
         if (size < offset) offset = 0;
         if (size === offset) {
           if (!processAlive(state.pid)) {
+            state.status = "stopped";
+            saveState(state.statePath, state);
             stopLogWatcher();
+            active = null;
+            syncStatus(ctx, null);
             notify(ctx, `Codex monitor stopped for ${state.owner}/${state.name}#${state.pr}.`, "warning");
           }
           return;
@@ -216,18 +230,31 @@ export default function codexReviewLoopExtension(pi) {
           notify(ctx, message, event.type === "quota" ? "error" : "info");
           pi.sendMessage({ customType: "codex-review-loop-event", content: message, display: true }, { deliverAs: "steer", triggerTurn: true });
         }
+        if (!processAlive(state.pid)) {
+          state.status = "stopped";
+          saveState(state.statePath, state);
+          stopLogWatcher();
+          active = null;
+          syncStatus(ctx, null);
+          notify(ctx, `Codex monitor stopped for ${state.owner}/${state.name}#${state.pr}.`, "warning");
+        }
       } catch {
         // The monitor may exit while its log is being rotated or cleaned up.
       }
     };
-    logWatcher = watch(state.log, { persistent: false }, (_eventType) => {
-      if (generation === watcherGeneration) consumeLog();
-    });
-    consumeLog();
     livenessTimer = setInterval(() => {
       if (generation === watcherGeneration) consumeLog();
     }, 5000);
     livenessTimer.unref?.();
+    try {
+      logWatcher = watch(state.log, { persistent: false }, (_eventType) => {
+        if (generation === watcherGeneration) consumeLog();
+      });
+      logWatcher.on("error", () => consumeLog());
+    } catch {
+      logWatcher = null;
+    }
+    consumeLog();
   };
 
   pi.registerCommand("codex-review-loop", {
@@ -288,7 +315,7 @@ export default function codexReviewLoopExtension(pi) {
 
         const log = `${path}.log`;
         const logFd = openSync(log, "w");
-        const child = spawn("bash", [MONITOR_SCRIPT], {
+        const child = spawn(monitorShell(), [MONITOR_SCRIPT], {
           cwd: repoCwd,
           detached: true,
           env: { ...process.env, PR: pr, OWNER: owner, NAME: name, GH_REPO: `${owner}/${name}` },
