@@ -101,7 +101,7 @@ function syncStatus(ctx, state) {
 }
 
 async function readCodexSignal(state) {
-  const query = `query($o:String!,$n:String!,$p:Int!){repository(owner:$o,name:$n){pullRequest(number:$p){reactionGroups{content users(first:20){nodes{login}}} reviews(last:20){nodes{author{login} state submittedAt}} comments(last:20){nodes{author{login} createdAt}}}}}}`;
+  const query = `query($o:String!,$n:String!,$p:Int!){repository(owner:$o,name:$n){pullRequest(number:$p){reactionGroups{content users(first:20){nodes{login}}} reviews(last:20){nodes{author{login} state submittedAt}} comments(last:20){nodes{author{login} createdAt}}}}}`;
   const { stdout } = await run("gh", ["api", "graphql", "-f", `query=${query}`, "-f", `o=${state.owner}`, "-f", `n=${state.name}`, "-F", `p=${state.pr}`], { cwd: state.cwd });
   const pr = JSON.parse(stdout).data.repository.pullRequest;
   const fromCodex = (login) => login?.startsWith("chatgpt-codex-connector");
@@ -219,7 +219,7 @@ export default function codexReviewLoopExtension(pi) {
         // The monitor may exit while its log is being rotated or cleaned up.
       }
     }, 1000);
-    signalWatcher = setInterval(refreshSignal, 30000);
+    signalWatcher = setInterval(refreshSignal, 5000);
   };
 
   pi.registerCommand("codex-review-loop", {

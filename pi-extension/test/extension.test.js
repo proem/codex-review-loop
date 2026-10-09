@@ -35,6 +35,18 @@ test("processAlive rejects invalid PIDs", () => {
   assert.equal(processAlive(-1), false);
 });
 
+test("readCodexSignal query has balanced GraphQL braces", async () => {
+  const source = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../index.js", import.meta.url), "utf8"));
+  const query = source.match(/const query = `([^`]+)`;/)?.[1] || "";
+  let depth = 0;
+  for (const character of query) {
+    if (character === "{") depth += 1;
+    if (character === "}") depth -= 1;
+    assert.ok(depth >= 0, "GraphQL query closes a brace before opening it");
+  }
+  assert.equal(depth, 0);
+});
+
 test("validatePrIdentifier accepts only positive integers", () => {
   assert.equal(validatePrIdentifier("1"), true);
   assert.equal(validatePrIdentifier("42"), true);
