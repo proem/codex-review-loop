@@ -42,11 +42,24 @@ This workflow is host-agent neutral. Use it with Pi, Claude Code, Codex CLI, or 
 5. Wait while the reviewer processes the current head. Do not push during an in-flight review.
 6. Read and triage every finding: severity, changed-path relevance, regression ownership, and actionability.
 7. Fix only justified findings. Reproduce with a focused test when practical, make the smallest correct change, verify it, commit with traceability, push once, and wait for the next review.
-8. Archive deferred findings honestly. Use one aggregate follow-up issue when needed, reply with its link and rationale, then resolve the thread.
-9. Stop on reviewer approval, the severity floor, a scaled round cap, an operational block, or a human decision. A round cap never overrides a critical finding or confirmed regression.
+8. **Close every review round completely.** After each new Codex review, enumerate every unresolved thread. For each actionable finding, fix it, verify it, push the fix, and then mark that exact thread resolved. Do not stop after resolving an earlier round if a later review has created new unresolved threads.
+9. Archive deferred findings honestly. Use one aggregate follow-up issue when needed, reply with its link and rationale, then resolve the deferred thread.
+10. Stop on reviewer approval, the severity floor, a scaled round cap, an operational block, or a human decision. A round cap never overrides a critical finding or confirmed regression.
 10. Report the final head SHA, CI state, blockers, deferred findings, monitor state, and merge eligibility. Merge only with explicit user authorization and passing safety gates. Stop and clean up the monitor.
 
 The agent owns triage and stopping decisions. Reviewer labels and approval signals are evidence, not authority.
+
+### Mandatory review-round closeout
+
+Before reporting the loop complete, run a fresh query for all Codex review threads and verify every thread is resolved or explicitly archived with a rationale. A new commit can trigger a new Codex review and create new threads; those findings belong to the new round and must be processed before completion. Never report “fixed” or “done” based only on the previous round's threads.
+
+For every thread fixed in the current round, the required order is:
+
+```text
+read finding → make fix → run verification → push commit → resolve exact thread → query again
+```
+
+If the new query shows unresolved Codex threads, the workflow remains open. Continue the loop or report the exact blocker. Do not leave newly generated actionable comments unresolved.
 
 ## The Codex protocol (default reviewer implementation)
 

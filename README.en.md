@@ -86,7 +86,7 @@ Restart your Claude Code session for it to take effect.
 
 ## Usage
 
-Once installed, trigger it on an open PR you want Codex to gate — e.g. "watch codex on this PR" or "盯着 codex 的 review". The full protocol, decision rules, monitor script, and fix workflow live in [`skills/codex-review-loop/SKILL.md`](skills/codex-review-loop/SKILL.md).
+Once installed, trigger it on an open PR you want Codex to gate — e.g. "watch codex on this PR" or "盯着 codex 的 review". The full protocol, decision rules, monitor script, and fix workflow live in [`skills/codex-review-loop/SKILL.md`](skills/codex-review-loop/SKILL.md). Every Codex review round must close completely: fix, verify, push, and resolve each corresponding thread; comments created by a later review after the new commit must also be processed before reporting completion.
 
 When loaded as a Pi package, the extension also provides:
 

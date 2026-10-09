@@ -86,7 +86,7 @@ npx skills add proem/codex-review-loop
 
 ## 使用方法
 
-装好之后，在你想让 Codex 把关的一个开着的 PR 上触发它——比如说“watch codex on this PR”或者“盯着 codex 的 review”。完整的协议、决策规则、monitor 脚本和修复流程都在 [`skills/codex-review-loop/SKILL.md`](skills/codex-review-loop/SKILL.md) 里。
+装好之后，在你想让 Codex 把关的一个开着的 PR 上触发它——比如说“watch codex on this PR”或者“盯着 codex 的 review”。完整的协议、决策规则、monitor 脚本和修复流程都在 [`skills/codex-review-loop/SKILL.md`](skills/codex-review-loop/SKILL.md) 里。每一轮 Codex review 都必须完整闭环：逐条修复、验证、push，并将对应 thread 标记为 resolved；新提交触发的新一轮 comments 也必须继续处理，不能只 resolve 上一轮。
 
 如果作为 Pi package 加载，还提供以下命令：
 
