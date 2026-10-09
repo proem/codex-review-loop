@@ -91,7 +91,20 @@ function syncStatus(ctx, state) {
   }
   const label = `${state.owner}/${state.name}#${state.pr}`;
   const link = hyperlink(label, state.url);
-  ctx?.ui?.setStatus?.(STATUS_KEY, `Codex monitor: ${state.status} · ${link}`);
+  const signal = state.codexSignal || "—";
+  ctx?.ui?.setStatus?.(STATUS_KEY, `Codex ${signal} · ${state.status} · ${link}`);
+}
+
+async function readCodexSignal(state) {
+  const query = `query($o:String!,$n:String!,$p:Int!){repository(owner:$o,name:$n){pullRequest(number:$p){reactionGroups{content users(first:20){nodes{login}}} reviews(last:20){nodes{author{login} state}} comments(last:20){nodes{author{login}}}}}}`;
+  const { stdout } = await run("gh", ["api", "graphql", "-f", `query=${query}`, "-f", `o=${state.owner}`, "-f", `n=${state.name}`, "-F", `p=${state.pr}`], { cwd: state.cwd });
+  const pr = JSON.parse(stdout).data.repository.pullRequest;
+  const fromCodex = (login) => login?.startsWith("chatgpt-codex-connector");
+  const reaction = (content) => pr.reactionGroups.some((group) => group.content === content && group.users.nodes.some((user) => fromCodex(user.login)));
+  if (reaction("EYES")) return "👀";
+  if (reaction("THUMBS_UP")) return "👍";
+  if (pr.reviews.nodes.some((review) => fromCodex(review.author?.login)) || pr.comments.nodes.some((comment) => fromCodex(comment.author?.login))) return "💬";
+  return "—";
 }
 
 async function assertGitRepository(cwd) {
@@ -130,6 +143,7 @@ export { hyperlink, parseCommand, processAlive, readState, statePath };
 export default function codexReviewLoopExtension(pi) {
   let active = null;
   let logWatcher = null;
+  let signalWatcher = null;
 
   const status = (ctx) => {
     if (!active) return null;
@@ -143,12 +157,23 @@ export default function codexReviewLoopExtension(pi) {
 
   const stopLogWatcher = () => {
     if (logWatcher) clearInterval(logWatcher);
+    if (signalWatcher) clearInterval(signalWatcher);
     logWatcher = null;
+    signalWatcher = null;
   };
 
   const startLogWatcher = (state, ctx) => {
     stopLogWatcher();
     let offset = statSync(state.log).size;
+    const refreshSignal = async () => {
+      try {
+        state.codexSignal = await readCodexSignal(state);
+        syncStatus(ctx, state);
+      } catch {
+        // Keep the last known signal while GitHub is temporarily unavailable.
+      }
+    };
+    refreshSignal();
     logWatcher = setInterval(() => {
       try {
         const size = statSync(state.log).size;
@@ -173,6 +198,7 @@ export default function codexReviewLoopExtension(pi) {
         // The monitor may exit while its log is being rotated or cleaned up.
       }
     }, 1000);
+    signalWatcher = setInterval(refreshSignal, 30000);
   };
 
   pi.registerCommand("codex-review-loop", {
