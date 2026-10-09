@@ -1,12 +1,13 @@
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MONITOR_SCRIPT = resolve(dirname(fileURLToPath(import.meta.url)), "../skills/codex-review-loop/scripts/monitor.sh");
 const REVIEWER = "chatgpt-codex-connector[bot]";
+const STATUS_KEY = "zz-codex-review-loop";
 
 function run(file, args, options = {}) {
   return new Promise((resolvePromise, reject) => {
@@ -72,12 +73,12 @@ function hyperlink(label, url) {
 
 function syncStatus(ctx, state) {
   if (!state) {
-    ctx?.ui?.setStatus?.("codex-review-loop", undefined);
+    ctx?.ui?.setStatus?.(STATUS_KEY, undefined);
     return;
   }
   const label = `${state.owner}/${state.name}#${state.pr}`;
   const link = hyperlink(label, state.url);
-  ctx?.ui?.setStatus?.("codex-review-loop", `Codex monitor: ${state.status} · ${link}`);
+  ctx?.ui?.setStatus?.(STATUS_KEY, `Codex monitor: ${state.status} · ${link}`);
 }
 
 async function assertGitRepository(cwd) {
@@ -115,6 +116,7 @@ export { hyperlink, parseCommand, processAlive, readState, statePath };
 
 export default function codexReviewLoopExtension(pi) {
   let active = null;
+  let logWatcher = null;
 
   const status = (ctx) => {
     if (!active) return null;
@@ -124,6 +126,40 @@ export default function codexReviewLoopExtension(pi) {
       return active;
     }
     return active;
+  };
+
+  const stopLogWatcher = () => {
+    if (logWatcher) clearInterval(logWatcher);
+    logWatcher = null;
+  };
+
+  const startLogWatcher = (state, ctx) => {
+    stopLogWatcher();
+    let offset = 0;
+    logWatcher = setInterval(() => {
+      try {
+        const size = statSync(state.log).size;
+        if (size < offset) offset = 0;
+        if (size === offset) {
+          if (!processAlive(state.pid)) {
+            stopLogWatcher();
+            notify(ctx, `Codex monitor stopped for ${state.owner}/${state.name}#${state.pr}.`, "warning");
+          }
+          return;
+        }
+        const content = readFileSync(state.log, "utf8");
+        const lines = content.slice(offset).split(/\r?\n/).filter(Boolean);
+        offset = content.length;
+        for (const line of lines) {
+          if (!/^\[(new|nudge|BLOCKED:QUOTA)\]/.test(line)) continue;
+          const message = `[Codex review loop] ${state.owner}/${state.name}#${state.pr}: ${line}`;
+          notify(ctx, message, line.startsWith("[BLOCKED") ? "error" : "info");
+          pi.sendUserMessage(message, { deliverAs: "followUp" });
+        }
+      } catch {
+        // The monitor may exit while its log is being rotated or cleaned up.
+      }
+    }, 1000);
   };
 
   pi.registerCommand("codex-review-loop", {
@@ -152,6 +188,7 @@ export default function codexReviewLoopExtension(pi) {
           active = null;
           syncStatus(ctx, null);
           pi.appendEntry("codex-review-loop", { action: "stop" });
+          stopLogWatcher();
           notify(ctx, "Codex monitor stopped.", "info");
         } else {
           notify(ctx, "No Codex monitor is running in this session.", "info");
@@ -193,6 +230,7 @@ export default function codexReviewLoopExtension(pi) {
         saveState(path, active);
         pi.appendEntry("codex-review-loop", { action: "start", ...active });
         syncStatus(ctx, active);
+        startLogWatcher(active, ctx);
         notify(ctx, `Codex monitor started for ${owner}/${name}#${pr}.\nLog: ${log}`, "info");
       } catch (error) {
         notify(ctx, `Could not start Codex monitor: ${error.message}`, "error");
@@ -205,6 +243,7 @@ export default function codexReviewLoopExtension(pi) {
   });
 
   pi.on("session_shutdown", async () => {
+    stopLogWatcher();
     if (active) stopState(active, active.statePath);
     active = null;
   });
