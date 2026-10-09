@@ -66,7 +66,9 @@ Codex 总能再挑出一条 nitpick，而且它在 push 之后的自动 review �
 
 - [`gh`](https://cli.github.com/)（GitHub CLI），并已针对目标仓库完成认证。
 - `jq`。
-- 目标仓库已安装 [Codex GitHub 连接器](https://developers.openai.com/codex)，这样 `chatgpt-codex-connector[bot]` 才会真的去 review PR。
+- **目标 GitHub 账号或组织必须已安装并授权 [ChatGPT Codex Connector](https://github.com/apps/chatgpt-codex-connector) 到目标仓库**。安装时选择目标账号或组织，也可以用 **Only select repositories** 限定仓库。
+- 可以用 `gh api repos/<owner>/<repo>/installation` 验证 App 安装状态。
+- 仅成功发布 `@codex review` 评论不代表 App 已接入；如果没有 `chatgpt-codex-connector[bot]` 的 `👀`、review 或 comment，应停止重复触发并先检查 App 权限。
 
 ## 安装
 
@@ -84,7 +86,18 @@ npx skills add proem/codex-review-loop
 
 ## 使用方法
 
-装好之后，在你想让 Codex 把关的一个开着的 PR 上触发它——比如说“watch codex on this PR”或者“盯着 codex 的 review”。完整的协议、决策规则、monitor 脚本和修复流程都在 [`skills/codex-review-loop/SKILL.md`](skills/codex-review-loop/SKILL.md) 里。
+装好之后，在你想让 Codex 把关的一个开着的 PR 上触发它——比如说“watch codex on this PR”或者“盯着 codex 的 review”。完整的协议、决策规则、monitor 脚本和修复流程都在 [`skills/codex-review-loop/SKILL.md`](skills/codex-review-loop/SKILL.md) 里。每一轮 Codex review 都必须完整闭环：逐条修复、验证、push，并将对应 thread 标记为 resolved；新提交触发的新一轮 comments 也必须继续处理，不能只 resolve 上一轮。
+
+如果作为 Pi package 加载，还提供以下命令：
+
+```text
+/codex-review-loop start [PR]  为当前仓库启动 Codex monitor
+/codex-review-loop start https://github.com/owner/repo/pull/1  直接按 PR 链接启动
+/codex-review-loop status       查看 monitor 状态、PID 和日志路径
+/codex-review-loop stop        停止本 session 启动的 monitor
+```
+
+extension 只管理 monitor 进程。它不会修改、提交或合并代码。
 
 ## 许可证
 

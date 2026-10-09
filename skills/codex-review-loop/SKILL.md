@@ -1,19 +1,67 @@
 ---
 name: codex-review-loop
-description: Watch a GitHub PR for Codex AI review comments, author each fix in-loop, and stop at a sensible point instead of chasing Codex's nitpicks forever (Codex's 👍, or only non-regression nitpicks left → archive as follow-ups and close out). Use when the user says "盯着 codex 的 review", "等 codex 大拇指", "codex review loop", "watch codex on PR", "迭代修 codex 反馈", "codex pr iterate", "别让 codex 无限 review", or when they want a PR shepherded through automated review until approved. Also use when the user opens a PR and asks "盯一下，有问题就修" or "keep an eye on it and fix what comes up". Do NOT trigger when the repo has no `chatgpt-codex-connector[bot]` installed, when the user wants only human review, or when they ask to disable Codex.
+description: Handle Codex GitHub PR review comments: monitor Codex findings, make justified fixes, resolve or defer threads, and stop safely instead of chasing endless nitpicks. Use when the user asks to watch Codex review, iterate on Codex PR feedback, keep an eye on a PR and fix Codex findings, or wait for Codex approval. Supports Pi, Claude Code, Codex CLI, and other host agents.
 ---
 
-# Codex Review Loop
+# Codex GitHub Review Loop
 
-Shepherd a GitHub PR through Codex AI review: monitor for new findings, author each fix in-loop, resolve threads, and **stop at a sensible point** — Codex's 👍, or a severity floor you judge (only non-regression nitpicks left → archive them as follow-ups and close out). Stopping authority is yours, not Codex's.
+Handle Codex review comments on a GitHub PR: monitor Codex findings, make justified fixes, resolve or defer threads, and **stop at a safe point** — Codex's 👍, or a severity floor you judge (only non-regression nitpicks left → archive them as follow-ups and close out). Stopping authority is yours, not Codex's.
 
 ## When this applies
+
+This workflow applies specifically to Codex GitHub PR reviews. The default monitor and protocol below target the Codex GitHub connector.
+
+### Mandatory prerequisite: install the Codex GitHub App
+
+Before starting the workflow, the target GitHub account or organization **must have the ChatGPT Codex Connector installed and authorized for the target repository**:
+
+[Install ChatGPT Codex Connector](https://github.com/apps/chatgpt-codex-connector)
+
+In the GitHub App installation flow, choose the target account or organization, select **Only select repositories**, and grant access to the repository being reviewed. Do not treat a successfully posted `@codex review` comment as proof that the App is installed: the comment can be posted by any user even when Codex has no access.
+
+Verify the prerequisite before starting the monitor:
+
+```bash
+gh api repos/<owner>/<repo>/installation
+```
+
+If this returns an authorization or installation error, or if a test `@codex review` produces no `chatgpt-codex-connector[bot]` reaction, review, or comment, stop and report that the Codex GitHub App is not available for this repository. Do not keep posting repeated trigger comments.
 
 - Repo has `chatgpt-codex-connector[bot]` configured (check `gh api repos/<owner>/<repo>/pulls/$PR/reviews` for prior reviews from that user).
 - PR is open and the user wants Codex to gate the merge.
 - User has authorized you to push commits to the PR branch.
 
-## The Codex protocol (from its own About text)
+## Main workflow (agent-neutral host layer)
+
+This workflow is host-agent neutral. Use it with Pi, Claude Code, Codex CLI, or another agent. Agent-specific execution details are optional conveniences only.
+
+1. Establish the repository, PR, head branch, Codex reviewer identity, changed paths, CI requirements, and push or merge authorization.
+2. Verify the mandatory Codex GitHub App installation and repository authorization, then verify GitHub authentication, `gh`, `jq`, the monitor, and reviewer availability. Stop and report missing prerequisites.
+3. Record the baseline head SHA, CI state, existing reviews, unresolved threads, and latest reviewer activity. An old approval or quiet monitor is not approval for a new head.
+4. Start one Codex monitor. It must observe Codex reviews, unresolved findings, Codex comments, approval signals, CI, and terminal errors such as quota blocks.
+5. Wait while the reviewer processes the current head. Do not push during an in-flight review.
+6. Read and triage every finding: severity, changed-path relevance, regression ownership, and actionability.
+7. Fix only justified findings. Reproduce with a focused test when practical, make the smallest correct change, verify it, commit with traceability, push once, and wait for the next review.
+8. **Close every review round completely.** After each new Codex review, enumerate every unresolved thread. For each actionable finding, fix it, verify it, push the fix, and then mark that exact thread resolved. Do not stop after resolving an earlier round if a later review has created new unresolved threads.
+9. Archive deferred findings honestly. Use one aggregate follow-up issue when needed, reply with its link and rationale, then resolve the deferred thread.
+10. Stop on reviewer approval, the severity floor, a scaled round cap, an operational block, or a human decision. A round cap never overrides a critical finding or confirmed regression.
+10. Report the final head SHA, CI state, blockers, deferred findings, monitor state, and merge eligibility. Merge only with explicit user authorization and passing safety gates. Stop and clean up the monitor.
+
+The agent owns triage and stopping decisions. Reviewer labels and approval signals are evidence, not authority.
+
+### Mandatory review-round closeout
+
+Before reporting the loop complete, run a fresh query for all Codex review threads and verify every thread is resolved or explicitly archived with a rationale. A new commit can trigger a new Codex review and create new threads; those findings belong to the new round and must be processed before completion. Never report “fixed” or “done” based only on the previous round's threads.
+
+For every thread fixed in the current round, the required order is:
+
+```text
+read finding → make fix → run verification → push commit → resolve exact thread → query again
+```
+
+If the new query shows unresolved Codex threads, the workflow remains open. Continue the loop or report the exact blocker. Do not leave newly generated actionable comments unresolved.
+
+## The Codex protocol (default reviewer implementation)
 
 - Codex auto-reviews on PR open, draft→ready transitions, new commits to the head branch, or `@codex review` comments.
 - While processing it leaves an `eyes` reaction on the PR issue.
@@ -44,7 +92,7 @@ Codex can always surface one more nitpick. If its 👍 is the *only* exit, the l
 
 **Why the floor / cap exist (the deadlock)**: if you decline + resolve every non-regression P3 and *don't* push, no new commit means Codex never auto-re-reviews, so the 👍 never comes; and a thread you declined often gets **re-filed verbatim** next round. The floor exit cuts that tug-of-war — once you've judged a finding non-regression and archived it with a paper trail, you close out; you don't manufacture a fix to chase its 👍.
 
-## Setup — arm the monitor
+## Setup — arm the Codex monitor
 
 The monitor watches Codex's reviews, fresh inline findings (unresolved review threads), its PR-issue comments (e.g. the quota/usage reply in the no-reaction fallback), the PR's 👍 reaction, and CI — all in **one GraphQL query per cycle**. Do NOT use the per-surface REST version: separate calls for reviews/comments/inline/checks plus an N+1 reactions loop, every 30s, burns the 5000/hr REST quota in minutes and starts 403-ing (observed live). GraphQL has its own point budget and one query covers every surface.
 
@@ -52,9 +100,57 @@ The monitor watches Codex's reviews, fresh inline findings (unresolved review th
 
 **The monitor must also self-terminate on a quota block, not just self-heal.** A nudge assumes Codex is merely *behind*; a usage-limit reply means it *cannot* review at all until quota resets — hours away, not another poll cycle. Treating that reply as one more routine `comment ...` line to notice-and-judge cost a real run **3 hours** of silent waiting (on one production PR the quota reply arrived 29 seconds after push, and nobody acted on it until the user asked). So the script also checks every cycle for a Codex PR-issue comment matching the real, observed wording ("usage limits for code reviews" / "codex usage dashboard") and, on a match, prints an unmissable `[BLOCKED:QUOTA]` line and **exits the script** — ending the Monitor watch itself, not leaving a stdout line to be missed.
 
-Use a `persistent: true` Monitor task:
+## Agent integrations (nice to have)
 
-The script lives at `scripts/monitor.sh` inside this skill directory — set `PR`, `OWNER` and `NAME` at the top of that file (or export them and drop that first line), then run it as the Monitor task's command. It emits the event lines documented right below.
+The workflow above is the source of truth. These sections only describe convenient ways to run the monitor in specific hosts.
+
+### Pi
+
+Pi does not provide Claude Code's `persistent: true` Monitor task. Run the
+bundled script as a separate background process and redirect its output to a
+log file that Pi can read:
+
+```bash
+skill_dir="<skill-directory>"
+state_dir="${TMPDIR:-/tmp}/codex-review-loop-pr-123"
+mkdir -p "$state_dir"
+
+PR=123 OWNER=acme NAME=widgets \
+  nohup bash "$skill_dir/scripts/monitor.sh" \
+  > "$state_dir/monitor.log" 2>&1 &
+
+echo $! > "$state_dir/monitor.pid"
+```
+
+Replace the example PR, owner, repository, and skill directory values. The
+monitor emits the event lines documented below. Read `monitor.log` after
+startup and after each relevant event. No new output is not an approval
+signal.
+
+On Windows, run this command in Git Bash or WSL. The script requires Bash,
+`gh`, `jq`, and process substitution.
+
+### Claude Code
+
+Use a persistent background task or shell process if available. Keep the same
+monitor log, event handling, stopping gates, and cleanup rules. Do not treat a
+Claude Code task's continued existence as evidence that the reviewer is still
+working; inspect the reviewer's timestamps and monitor output.
+
+### Codex CLI
+
+Run the monitor as a separate shell process or through the CLI's background
+command facility. Keep the monitor PID and log path in the session context.
+The Codex CLI driving this workflow is the host agent; the GitHub Codex
+connector being monitored is a separate reviewer and must not be confused
+with the host agent.
+
+### Other agents
+
+Use the same `monitor.sh` contract when the agent can run Bash, `gh`, and
+`jq`. Otherwise implement an equivalent watcher that preserves the event
+contract and bounded one-nudge-per-head behavior. Do not weaken the stopping
+gates to fit a host-specific task API.
 
 Exit / event signals (note: GraphQL login format is inconsistent across fields — `reviews.author.login` / `reviewThreads[].comments[].author.login` / `comments[].author.login` are the bare `chatgpt-codex-connector`, but `reactionGroups[].users.nodes[].login` carries a `[bot]` suffix, `chatgpt-codex-connector[bot]` — confirmed live: a real 👍 reaction sat undetected because an exact-match filter missed it. The reaction check above uses `startswith("chatgpt-codex-connector")` specifically to cover both forms; don't "simplify" it back to an exact match):
 - `[new] reaction +1 chatgpt-codex-connector[bot]` → the 👍 approval signal.
@@ -125,10 +221,14 @@ The exit is decided by **Stopping authority**'s three content-readiness gates (A
 - **no unresolved P0, and no unresolved P1 on the changed path.**
 Either one fails → **do not merge**, stop and report.
 
-Then `TaskStop` the monitor (harmless no-op if it already exited itself on `[BLOCKED:QUOTA]`):
+Then stop the monitor process (harmless no-op if it already exited itself
+on `[BLOCKED:QUOTA]`):
 
-```
-TaskStop(task_id=<monitor_id>)
+```bash
+if [ -f "$state_dir/monitor.pid" ]; then
+  kill "$(cat "$state_dir/monitor.pid")" 2>/dev/null || true
+  rm -f "$state_dir/monitor.pid"
+fi
 ```
 
 ## Anti-patterns
@@ -140,7 +240,7 @@ TaskStop(task_id=<monitor_id>)
 - ❌ **Re-evaluating a non-regression finding just because Codex re-filed it next round** — a re-file doesn't make it your regression. Archive it once; subsequent re-files count toward the round cap, not toward another fix.
 - ❌ Silently resolving a thread as if you fixed it — if you didn't fix it, the resolve must be preceded by a reply pointing to the follow-up issue (honest archive), never a quiet resolve that pretends it's done.
 - ❌ Idling on the 👍 when the floor is already reached (no unresolved P0, no P1 on the changed path, no regression of yours, CI green) — that's the loop that never ends. (The mirror error: don't self-approve a merge with "it's only P3" while a P0 or a P1-on-changed-path is open, or CI is red.)
-- ❌ Leaving the monitor running after merge — `TaskStop` it explicitly.
+- ❌ Leaving the monitor running after merge — stop the background process and remove its PID file explicitly.
 - ❌ Treating `eyes` as approval. It only means "I see new activity"; `+1` is approval.
 - ❌ **Sitting on a `[BLOCKED:QUOTA]` line (or an un-noticed quota-limit comment, on an older monitor without this check) as if it were routine polling noise** — it is a terminal state that does not resolve on the loop's timescale. Report to the user in the same turn you see it; don't keep the monitor running, don't push a commit hoping to re-trigger a review, and don't silently decide to merge (or not merge) on the user's behalf — that decision has more than one right answer and is theirs to make.
 

@@ -66,7 +66,9 @@ Codex can always surface one more nitpick, and auto-review-on-push is unreliable
 
 - [`gh`](https://cli.github.com/) (GitHub CLI), authenticated against the target repo.
 - `jq`.
-- A repository with the [Codex GitHub connector](https://developers.openai.com/codex) installed, so `chatgpt-codex-connector[bot]` actually reviews PRs.
+- **The target GitHub account or organization must install and authorize the [ChatGPT Codex Connector](https://github.com/apps/chatgpt-codex-connector) for the target repository.** During installation, choose the target account or organization and optionally use **Only select repositories**.
+- Verify the installation with `gh api repos/<owner>/<repo>/installation`.
+- Successfully posting `@codex review` does not prove that the App is connected. If there is no `chatgpt-codex-connector[bot]` `👀` reaction, review, or comment, stop posting triggers and check the App permissions first.
 
 ## Installation
 
@@ -84,7 +86,18 @@ Restart your Claude Code session for it to take effect.
 
 ## Usage
 
-Once installed, trigger it on an open PR you want Codex to gate — e.g. "watch codex on this PR" or "盯着 codex 的 review". The full protocol, decision rules, monitor script, and fix workflow live in [`skills/codex-review-loop/SKILL.md`](skills/codex-review-loop/SKILL.md).
+Once installed, trigger it on an open PR you want Codex to gate — e.g. "watch codex on this PR" or "盯着 codex 的 review". The full protocol, decision rules, monitor script, and fix workflow live in [`skills/codex-review-loop/SKILL.md`](skills/codex-review-loop/SKILL.md). Every Codex review round must close completely: fix, verify, push, and resolve each corresponding thread; comments created by a later review after the new commit must also be processed before reporting completion.
+
+When loaded as a Pi package, the extension also provides:
+
+```text
+/codex-review-loop start [PR]  Start the Codex monitor for the current repository
+/codex-review-loop start https://github.com/owner/repo/pull/1  Start directly from a PR URL
+/codex-review-loop status       Show monitor status, PID, and log path
+/codex-review-loop stop        Stop the monitor started by this session
+```
+
+The extension only manages the monitor process. It does not modify, commit, or merge code.
 
 ## License
 
