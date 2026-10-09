@@ -53,6 +53,10 @@ function processAlive(pid) {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
+function validatePrIdentifier(value) {
+  return /^(?:[1-9]\d*)$/.test(String(value || ""));
+}
+
 function saveState(path, state) {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(state, null, 2));
@@ -105,8 +109,8 @@ async function readCodexSignal(state) {
   const reviews = pr.reviews.nodes.filter((review) => fromCodex(review.author?.login));
   const comments = pr.comments.nodes.filter((comment) => fromCodex(comment.author?.login));
   let signal = "—";
-  if (reaction("EYES")) signal = "👀";
-  else if (reaction("THUMBS_UP")) signal = "👍";
+  if (reaction("THUMBS_UP")) signal = "👍";
+  else if (reaction("EYES")) signal = "👀";
   else if (reviews.length || comments.length) signal = "💬";
   const activity = [...reviews.map((review) => review.submittedAt), ...comments.map((comment) => comment.createdAt)].sort().at(-1) || "";
   return { signal, activity };
@@ -143,7 +147,7 @@ function stopState(state, path) {
   removeState(path);
 }
 
-export { hyperlink, parseCommand, processAlive, readState, statePath };
+export { hyperlink, parseCommand, processAlive, readState, statePath, validatePrIdentifier };
 
 export default function codexReviewLoopExtension(pi) {
   let active = null;
@@ -200,8 +204,8 @@ export default function codexReviewLoopExtension(pi) {
           }
           return;
         }
-        const content = readFileSync(state.log, "utf8");
-        const lines = content.slice(offset).split(/\r?\n/).filter(Boolean);
+        const content = readFileSync(state.log);
+        const lines = content.subarray(offset).toString("utf8").split(/\r?\n/).filter(Boolean);
         offset = content.length;
         state.logOffset = offset;
         saveState(state.statePath, state);
@@ -261,6 +265,9 @@ export default function codexReviewLoopExtension(pi) {
         const hasGithubReference = parsed.owner && parsed.name && parsed.pr;
         const repoCwd = hasGithubReference || parsed.repo ? cwd : await assertGitRepository(cwd);
         const pr = parsed.pr || await resolvePullRequest(repoCwd, parsed.pr);
+        if (!validatePrIdentifier(pr)) throw new Error(`Invalid pull request number: ${pr}`);
+        const { stdout: prCheck } = await run("gh", ["pr", "view", pr, "--repo", hasGithubReference ? `${parsed.owner}/${parsed.name}` : undefined].filter(Boolean), { cwd: repoCwd });
+        if (!prCheck.trim()) throw new Error(`Pull request #${pr} was not found.`);
         const { owner, name } = hasGithubReference ? parsed : await resolveRepository(repoCwd);
         const path = statePath(repoCwd, pr);
         const previous = readState(path);

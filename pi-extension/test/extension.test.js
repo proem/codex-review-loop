@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { hyperlink, parseCommand, processAlive, statePath } from "../index.js";
+import { hyperlink, parseCommand, processAlive, statePath, validatePrIdentifier } from "../index.js";
 
 test("parseCommand defaults to status", () => {
   assert.deepEqual(parseCommand(""), { action: "status", pr: "", repo: "" });
@@ -33,6 +33,14 @@ test("processAlive rejects invalid PIDs", () => {
   assert.equal(processAlive(undefined), false);
   assert.equal(processAlive(0), false);
   assert.equal(processAlive(-1), false);
+});
+
+test("validatePrIdentifier accepts only positive integers", () => {
+  assert.equal(validatePrIdentifier("1"), true);
+  assert.equal(validatePrIdentifier("42"), true);
+  assert.equal(validatePrIdentifier("0"), false);
+  assert.equal(validatePrIdentifier("-1"), false);
+  assert.equal(validatePrIdentifier("typo"), false);
 });
 
 test("hyperlink emits an OSC 8 terminal link", () => {
