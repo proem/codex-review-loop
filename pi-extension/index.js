@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,6 +60,19 @@ function saveState(path, state) {
 
 function removeState(path) {
   try { unlinkSync(path); } catch { /* already stopped */ }
+}
+
+function findPersistedState() {
+  try {
+    return readdirSync(tmpdir())
+      .filter((name) => name.startsWith("pi-codex-review-loop-") && name.endsWith(".json"))
+      .map((name) => join(tmpdir(), name))
+      .map((path) => ({ path, state: readState(path) }))
+      .filter(({ state }) => state && processAlive(state.pid))
+      .sort((a, b) => (b.state.startedAt || "").localeCompare(a.state.startedAt || ""))[0]?.state || null;
+  } catch {
+    return null;
+  }
 }
 
 function notify(ctx, message, level = "info") {
@@ -135,7 +148,7 @@ export default function codexReviewLoopExtension(pi) {
 
   const startLogWatcher = (state, ctx) => {
     stopLogWatcher();
-    let offset = 0;
+    let offset = statSync(state.log).size;
     logWatcher = setInterval(() => {
       try {
         const size = statSync(state.log).size;
@@ -226,7 +239,7 @@ export default function codexReviewLoopExtension(pi) {
         child.unref();
 
         const url = `https://github.com/${owner}/${name}/pull/${pr}`;
-        active = { pid: child.pid, pr, owner, name, url, cwd: repoCwd, log, statePath: path, status: "running", reviewer: REVIEWER };
+        active = { pid: child.pid, pr, owner, name, url, cwd: repoCwd, log, statePath: path, status: "running", reviewer: REVIEWER, startedAt: new Date().toISOString() };
         saveState(path, active);
         pi.appendEntry("codex-review-loop", { action: "start", ...active });
         syncStatus(ctx, active);
@@ -239,12 +252,19 @@ export default function codexReviewLoopExtension(pi) {
   });
 
   pi.on("session_start", async (_event, ctx) => {
-    syncStatus(ctx, active);
+    active = findPersistedState();
+    if (active) {
+      syncStatus(ctx, active);
+      startLogWatcher(active, ctx);
+      notify(ctx, `Codex monitor resumed for ${active.owner}/${active.name}#${active.pr}.`, "info");
+    } else {
+      syncStatus(ctx, null);
+    }
   });
 
   pi.on("session_shutdown", async () => {
     stopLogWatcher();
-    if (active) stopState(active, active.statePath);
+    // Keep the detached monitor alive. An explicit /codex-review-loop stop removes it.
     active = null;
   });
 }
