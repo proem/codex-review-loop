@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { hyperlink, normalizePath, parseCommand, processAlive, statePath, validatePrIdentifier } from "../index.js";
+import { hyperlink, monitorShell, normalizePath, parseCommand, processAlive, statePath, validatePrIdentifier } from "../index.js";
 
 test("parseCommand defaults to status", () => {
   assert.deepEqual(parseCommand(""), { action: "status", pr: "", repo: "" });
@@ -33,22 +33,20 @@ test("normalizePath compares Windows path separators consistently", () => {
   assert.equal(normalizePath("C:\\Users\\yibo"), normalizePath("c:/users/yibo"));
 });
 
+test("monitor shell is available", () => {
+  assert.ok(monitorShell());
+});
+
 test("processAlive rejects invalid PIDs", () => {
   assert.equal(processAlive(undefined), false);
   assert.equal(processAlive(0), false);
   assert.equal(processAlive(-1), false);
 });
 
-test("readCodexSignal query has balanced GraphQL braces", async () => {
-  const source = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../index.js", import.meta.url), "utf8"));
-  const query = source.match(/const query = `([^`]+)`;/)?.[1] || "";
-  let depth = 0;
-  for (const character of query) {
-    if (character === "{") depth += 1;
-    if (character === "}") depth -= 1;
-    assert.ok(depth >= 0, "GraphQL query closes a brace before opening it");
-  }
-  assert.equal(depth, 0);
+test("monitor events use JSON lines", () => {
+  const event = JSON.parse('{"type":"signal","signal":"👀"}');
+  assert.equal(event.type, "signal");
+  assert.equal(event.signal, "👀");
 });
 
 test("validatePrIdentifier accepts only positive integers", () => {

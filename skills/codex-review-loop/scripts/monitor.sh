@@ -2,7 +2,7 @@
 : "${PR:?PR is required}"
 : "${OWNER:?OWNER is required}"
 : "${NAME:?NAME is required}"
-state=""; first=1; nudged_sha=""; started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; GRACE="${GRACE:-120}"   # seconds a green head may sit unreviewed before we nudge
+state=""; first=1; last_signal=""; nudged_sha=""; started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; GRACE="${GRACE:-120}"   # seconds a green head may sit unreviewed before we nudge
 # Portable epoch: GNU date (Linux) first, BSD date (macOS) fallback.
 to_epoch(){ date -u -d "$1" +%s 2>/dev/null || date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$1" +%s 2>/dev/null || echo 0; }
 Q='query($o:String!,$n:String!,$p:Int!){ repository(owner:$o,name:$n){ pullRequest(number:$p){
@@ -21,14 +21,22 @@ while true; do
       + [$pr.comments.nodes[] | select(.author.login=="chatgpt-codex-connector") | "comment chatgpt-codex-connector \(.body[0:120] | gsub("\n";" "))"]
       + ["ci \($pr.commits.nodes[0].commit.statusCheckRollup.state // "PENDING")"]
       | .[]' 2>/dev/null | sort || true)
+    signal=$(printf '%s' "$out" | jq -r '.data.repository.pullRequest as $pr | if ([ $pr.reactionGroups[] | select(.content=="THUMBS_UP") | .users.nodes[] | select(.login|startswith("chatgpt-codex-connector")) ] | length) > 0 then "👍" elif ([ $pr.reactionGroups[] | select(.content=="EYES") | .users.nodes[] | select(.login|startswith("chatgpt-codex-connector")) ] | length) > 0 then "👀" elif (([$pr.reviews.nodes[] | select(.author.login=="chatgpt-codex-connector")] | length) > 0 or ([$pr.comments.nodes[] | select(.author.login=="chatgpt-codex-connector")] | length) > 0) then "💬" else "—" end')
+    if [ "$signal" != "$last_signal" ]; then
+      printf '%s\n' "$(jq -cn --arg signal "$signal" '{type:"signal",signal:$signal}')"
+      last_signal="$signal"
+    fi
     if [ "$first" = 1 ]; then
       first=0
       # Leave the current head eligible for recovery. The in-flight check below
       # suppresses a duplicate nudge when Codex is already reviewing it.
       nudged_sha=""
-      echo "[init] PR #$PR self-healing monitor armed (auto-nudges @codex on a green, unreviewed head)"
+      printf '[init] PR #%s self-healing monitor armed (auto-nudges @codex on a green, unreviewed head)\n' "$PR"
     else
-      comm -13 <(printf '%s' "$state") <(printf '%s' "$cur") | grep -v '^$' | sed 's/^/[new] /'
+      comm -13 <(printf '%s' "$state") <(printf '%s' "$cur") | grep -v '^$' | while IFS= read -r line; do
+        printf '[new] %s\n' "$line"
+        printf '%s\n' "$(jq -cn --arg detail "$line" '{type:"activity",detail:$detail}')"
+      done
     fi
     state="$cur"
 
@@ -44,7 +52,9 @@ while true; do
     # line, and there is nothing more this loop can do until quota resets.
     quotaComment=$(printf '%s' "$out" | jq -r --arg started "$started_at" '[.data.repository.pullRequest.comments.nodes[] | select(.author.login=="chatgpt-codex-connector") | select(.createdAt > $started) | select(.body | test("usage limits for code reviews|codex usage dashboard"; "i"))] | last | .body // empty')
     if [ -n "$quotaComment" ]; then
-      echo "[BLOCKED:QUOTA] Codex hit its review usage limit — the loop cannot proceed automatically until quota resets. Reply: $(printf '%s' "$quotaComment" | tr '\n' ' ' | cut -c1-200)"
+      quotaMessage="Codex hit its review usage limit — the loop cannot proceed automatically until quota resets. Reply: $(printf '%s' "$quotaComment" | tr '\n' ' ' | cut -c1-200)"
+      printf '[BLOCKED:QUOTA] %s\n' "$quotaMessage"
+      printf '%s\n' "$(jq -cn --arg message "$quotaMessage" '{type:"quota",message:$message}')"
       exit 0
     fi
 
@@ -70,7 +80,9 @@ while true; do
       fi
       if [ $? -eq 0 ]; then
         nudged_sha="$head"
-        echo "[nudge] auto @codex review — head ${head:0:8} green + unreviewed ${elapsed}s (no eyes/👍, newer than last review '${lastReview}')"
+        nudgeDetail="auto @codex review — head ${head:0:8} green + unreviewed ${elapsed}s (no eyes/👍, newer than last review '${lastReview}')"
+        printf '[nudge] %s\n' "$nudgeDetail"
+        printf '%s\n' "$(jq -cn --arg detail "$nudgeDetail" '{type:"activity",detail:$detail}')"
       fi
     fi
   fi

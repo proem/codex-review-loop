@@ -1,6 +1,6 @@
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, watch, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,6 +46,16 @@ function statePath(cwd, pr) {
 
 function readState(path) {
   try { return JSON.parse(readFileSync(path, "utf8")); } catch { return null; }
+}
+
+function monitorShell() {
+  if (process.platform !== "win32") return "bash";
+  const candidates = [process.env.PI_CODEX_BASH, "C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files\\Git\\usr\\bin\\bash.exe"];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try { if (statSync(candidate).isFile()) return candidate; } catch { /* try the next location */ }
+  }
+  return "bash.exe";
 }
 
 function processAlive(pid) {
@@ -121,22 +131,6 @@ function syncStatus(ctx, state) {
   ctx?.ui?.setStatus?.(STATUS_KEY, `Codex ${signal} · ${link}`);
 }
 
-async function readCodexSignal(state) {
-  const query = `query($o:String!,$n:String!,$p:Int!){repository(owner:$o,name:$n){pullRequest(number:$p){reactionGroups{content users(first:20){nodes{login}}} reviews(last:20){nodes{author{login} state submittedAt}} comments(last:20){nodes{author{login} createdAt}}}}}`;
-  const { stdout } = await run("gh", ["api", "graphql", "-f", `query=${query}`, "-f", `o=${state.owner}`, "-f", `n=${state.name}`, "-F", `p=${state.pr}`], { cwd: state.cwd });
-  const pr = JSON.parse(stdout).data.repository.pullRequest;
-  const fromCodex = (login) => login?.startsWith("chatgpt-codex-connector");
-  const reaction = (content) => pr.reactionGroups.some((group) => group.content === content && group.users.nodes.some((user) => fromCodex(user.login)));
-  const reviews = pr.reviews.nodes.filter((review) => fromCodex(review.author?.login));
-  const comments = pr.comments.nodes.filter((comment) => fromCodex(comment.author?.login));
-  let signal = "—";
-  if (reaction("THUMBS_UP")) signal = "👍";
-  else if (reaction("EYES")) signal = "👀";
-  else if (reviews.length || comments.length) signal = "💬";
-  const activity = [...reviews.map((review) => review.submittedAt), ...comments.map((comment) => comment.createdAt)].sort().at(-1) || "";
-  return { signal, activity };
-}
-
 async function assertGitRepository(cwd) {
   try {
     const { stdout } = await run("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { cwd });
@@ -168,12 +162,12 @@ function stopState(state, path) {
   removeState(path);
 }
 
-export { hyperlink, normalizePath, parseCommand, processAlive, readState, statePath, validatePrIdentifier };
+export { hyperlink, monitorShell, normalizePath, parseCommand, processAlive, readState, statePath, validatePrIdentifier };
 
 export default function codexReviewLoopExtension(pi) {
   let active = null;
   let logWatcher = null;
-  let signalWatcher = null;
+  let livenessTimer = null;
   let watcherGeneration = 0;
 
   const status = (ctx) => {
@@ -188,63 +182,79 @@ export default function codexReviewLoopExtension(pi) {
 
   const stopLogWatcher = () => {
     watcherGeneration += 1;
-    if (logWatcher) clearInterval(logWatcher);
-    if (signalWatcher) clearInterval(signalWatcher);
+    if (logWatcher) logWatcher.close();
+    if (livenessTimer) clearInterval(livenessTimer);
     logWatcher = null;
-    signalWatcher = null;
+    livenessTimer = null;
   };
 
   const startLogWatcher = (state, ctx) => {
     stopLogWatcher();
     const generation = watcherGeneration;
     let offset = Number.isInteger(state.logOffset) ? state.logOffset : 0;
-    const refreshSignal = async () => {
-      try {
-        const previousSignal = state.codexSignal;
-        const previousActivity = state.codexActivity;
-        const result = await readCodexSignal(state);
-        if (generation !== watcherGeneration || active?.statePath !== state.statePath) return;
-        state.codexSignal = result.signal;
-        state.codexActivity = result.activity;
-        saveState(state.statePath, state);
-        syncStatus(ctx, state);
-        if (result.activity && (result.activity !== previousActivity || (!previousSignal && result.signal !== "—"))) {
-          const message = `[Codex review loop] New Codex activity on ${state.owner}/${state.name}#${state.pr}: ${result.signal}. Inspect the latest GitHub review and act on justified findings.`;
-          notify(ctx, message, "info");
-          pi.sendUserMessage(message, { deliverAs: "followUp" });
-        }
-      } catch {
-        // Keep the last known signal while GitHub is temporarily unavailable.
-      }
-    };
-    refreshSignal();
-    logWatcher = setInterval(() => {
+    const consumeLog = () => {
       try {
         const size = statSync(state.log).size;
         if (size < offset) offset = 0;
         if (size === offset) {
           if (!processAlive(state.pid)) {
+            state.status = "stopped";
+            saveState(state.statePath, state);
             stopLogWatcher();
+            active = null;
+            syncStatus(ctx, null);
             notify(ctx, `Codex monitor stopped for ${state.owner}/${state.name}#${state.pr}.`, "warning");
           }
           return;
         }
         const content = readFileSync(state.log);
-        const lines = content.subarray(offset).toString("utf8").split(/\r?\n/).filter(Boolean);
-        offset = content.length;
+        const unread = content.subarray(offset);
+        const boundary = unread.lastIndexOf(10);
+        if (boundary < 0) return;
+        const complete = unread.subarray(0, boundary + 1);
+        const lines = complete.toString("utf8").split(/\r?\n/).filter(Boolean);
+        offset += complete.length;
         state.logOffset = offset;
         saveState(state.statePath, state);
         for (const line of lines) {
-          if (!/^\[(new|nudge|BLOCKED:QUOTA)\]/.test(line)) continue;
-          const message = `[Codex review loop] ${state.owner}/${state.name}#${state.pr}: ${line}`;
-          notify(ctx, message, line.startsWith("[BLOCKED") ? "error" : "info");
-          pi.sendUserMessage(message, { deliverAs: "followUp" });
+          let event;
+          try { event = JSON.parse(line); } catch { continue; }
+          if (event.type === "signal") {
+            state.codexSignal = event.signal;
+            saveState(state.statePath, state);
+            syncStatus(ctx, state);
+          }
+          if (event.type !== "activity" && event.type !== "quota") continue;
+          const detail = event.detail || event.message || line;
+          const message = `[Codex review loop] ${state.owner}/${state.name}#${state.pr}: ${detail}`;
+          notify(ctx, message, event.type === "quota" ? "error" : "info");
+          pi.sendMessage({ customType: "codex-review-loop-event", content: message, display: true }, { deliverAs: "steer", triggerTurn: true });
+        }
+        if (!processAlive(state.pid)) {
+          state.status = "stopped";
+          saveState(state.statePath, state);
+          stopLogWatcher();
+          active = null;
+          syncStatus(ctx, null);
+          notify(ctx, `Codex monitor stopped for ${state.owner}/${state.name}#${state.pr}.`, "warning");
         }
       } catch {
         // The monitor may exit while its log is being rotated or cleaned up.
       }
-    }, 1000);
-    signalWatcher = setInterval(refreshSignal, 5000);
+    };
+    livenessTimer = setInterval(() => {
+      if (generation === watcherGeneration) consumeLog();
+    }, 5000);
+    livenessTimer.unref?.();
+    try {
+      logWatcher = watch(state.log, { persistent: false }, (_eventType) => {
+        if (generation === watcherGeneration) consumeLog();
+      });
+      logWatcher.on("error", () => consumeLog());
+    } catch {
+      logWatcher = null;
+    }
+    consumeLog();
   };
 
   pi.registerCommand("codex-review-loop", {
@@ -305,7 +315,7 @@ export default function codexReviewLoopExtension(pi) {
 
         const log = `${path}.log`;
         const logFd = openSync(log, "w");
-        const child = spawn("bash", [MONITOR_SCRIPT], {
+        const child = spawn(monitorShell(), [MONITOR_SCRIPT], {
           cwd: repoCwd,
           detached: true,
           env: { ...process.env, PR: pr, OWNER: owner, NAME: name, GH_REPO: `${owner}/${name}` },
