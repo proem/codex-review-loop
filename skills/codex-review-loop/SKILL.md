@@ -1,6 +1,6 @@
 ---
 name: codex-review-loop
-description: Handle Codex GitHub PR review comments: monitor Codex findings, make justified fixes, resolve or defer threads, and stop safely instead of chasing endless nitpicks. Use when the user asks to watch Codex review, iterate on Codex PR feedback, keep an eye on a PR and fix Codex findings, or wait for Codex approval. Supports Pi, Claude Code, Codex CLI, and other host agents.
+description: "Handle Codex GitHub PR review comments: monitor Codex findings, make justified fixes, resolve or defer threads, and stop safely instead of chasing endless nitpicks. Use when the user asks to watch Codex review, iterate on Codex PR feedback, keep an eye on a PR and fix Codex findings, or wait for Codex approval. Supports Pi, Claude Code, Codex CLI, and other host agents."
 ---
 
 # Codex GitHub Review Loop

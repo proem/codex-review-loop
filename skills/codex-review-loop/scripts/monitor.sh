@@ -40,6 +40,12 @@ while true; do
     fi
     state="$cur"
 
+    prState=$(printf '%s' "$out" | jq -r '.data.repository.pullRequest.state // ""' 2>/dev/null)
+    if [ "$prState" = "CLOSED" ] || [ "$prState" = "MERGED" ]; then
+      printf '[done] PR #%s is %s — monitor exiting\n' "$PR" "$prState"
+      exit 0
+    fi
+
     # --- terminal check: Codex replied with an explicit usage/quota-limit message
     # (real wording, confirmed live: "You have reached your Codex usage limits for
     # code reviews... Codex usage dashboard...") instead of eyes/review. This does
